@@ -2,6 +2,8 @@ import type { DataSourceOptions } from 'typeorm';
 import { SnakeNamingStrategy } from './naming.strategy.js';
 import { EnableExtensions1756000000000 } from './migrations/1756000000000-enable-extensions.js';
 import { CreateTenants1756000000001 } from './migrations/1756000000001-create-tenants.js';
+import { CreateUsers1756000000002 } from './migrations/1756000000002-create-users.js';
+import { CreateMemberships1756000000003 } from './migrations/1756000000003-create-memberships.js';
 
 /**
  * Migrations are listed explicitly rather than loaded from a filesystem glob.
@@ -11,6 +13,8 @@ import { CreateTenants1756000000001 } from './migrations/1756000000001-create-te
 export const migrations = [
   EnableExtensions1756000000000,
   CreateTenants1756000000001,
+  CreateUsers1756000000002,
+  CreateMemberships1756000000003,
 ];
 
 /**

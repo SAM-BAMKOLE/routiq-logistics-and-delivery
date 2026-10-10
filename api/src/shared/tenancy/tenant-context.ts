@@ -1,0 +1,22 @@
+import type { ClsStore } from 'nestjs-cls';
+
+/**
+ * The identity of the caller for the duration of one request (or job): which
+ * tenant is active, which user is acting, and in what role.
+ *
+ * The tenant always comes from a verified token, never from a header or the
+ * request body, so nothing a client sends can move it to another tenant.
+ */
+export interface TenantPrincipal {
+  tenantId: string;
+  userId: string;
+  role: string;
+}
+
+/** Key under which the principal is stored in the CLS store. */
+export const TENANT_CLS_KEY = 'tenant';
+
+/** Typed CLS store: everything the app stashes per request lives here. */
+export interface LdmsClsStore extends ClsStore {
+  tenant?: TenantPrincipal;
+}

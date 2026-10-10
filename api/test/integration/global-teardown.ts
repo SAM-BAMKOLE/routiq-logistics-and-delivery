@@ -10,7 +10,7 @@ import { getContainerRuntimeClient } from 'testcontainers';
  * `moduleNameMapper` to global hooks, so a `.js`-suffixed import would fail.
  */
 const STATE_FILE = fileURLToPath(
-  new URL('./.runtime-state.json', import.meta.url),
+  new URL('../.runtime-state.json', import.meta.url),
 );
 
 export default async function globalTeardown(): Promise<void> {

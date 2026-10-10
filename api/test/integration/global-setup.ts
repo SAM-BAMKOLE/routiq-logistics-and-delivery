@@ -16,7 +16,7 @@ const POSTGIS_IMAGE = 'postgis/postgis:16-3.4';
  * import would fail to resolve. The test-side helpers resolve to the same path.
  */
 const STATE_FILE = fileURLToPath(
-  new URL('./.runtime-state.json', import.meta.url),
+  new URL('../.runtime-state.json', import.meta.url),
 );
 
 /**

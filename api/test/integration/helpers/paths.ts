@@ -7,5 +7,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * Handoff file between globalSetup (main process) and the test workers (child
  * processes). Jest workers do not inherit `process.env` mutations made in
  * globalSetup, so the container's connection details are written here instead.
+ *
+ * One shared file serves both the integration and the e2e runs; each run boots
+ * its own container and cleans up after itself.
  */
-export const STATE_FILE = join(HERE, '..', '.runtime-state.json');
+export const STATE_FILE = join(HERE, '..', '..', '.runtime-state.json');

@@ -59,6 +59,8 @@ describe('Database migrations (integration)', () => {
     expect(rows.map((row) => row.name)).toEqual([
       'EnableExtensions1756000000000',
       'CreateTenants1756000000001',
+      'CreateUsers1756000000002',
+      'CreateMemberships1756000000003',
     ]);
   });
 

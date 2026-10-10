@@ -6,7 +6,10 @@ import { randomUUID } from 'node:crypto';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { HttpExceptionFilter } from './common/errors/http-exception.filter.js';
+import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { TenantsModule } from './modules/tenants/tenants.module.js';
+import { TenancyModule } from './shared/tenancy/tenancy.module.js';
 import { validate } from './config/env.validation.js';
 
 @Module({
@@ -44,7 +47,12 @@ import { validate } from './config/env.validation.js';
         },
       }),
     }),
+    // The database (as the restricted runtime role) must exist before the
+    // tenancy kernel wires its transaction adapter to the DataSource.
+    DatabaseModule,
+    TenancyModule,
     HealthModule,
+    TenantsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -3,6 +3,7 @@ import { plainToInstance, Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
@@ -48,6 +49,23 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   CORS_ORIGINS: string = 'http://localhost:5173';
+
+  /**
+   * Runtime database connection, as the restricted `ldms_app` role: subject to
+   * Row Level Security and unable to run DDL. Migrations use
+   * `MIGRATION_DATABASE_URL` instead (read only by the TypeORM CLI).
+   */
+  @IsString()
+  @IsNotEmpty()
+  DATABASE_URL: string;
+
+  /**
+   * Shared secret for the platform administration API. Interim: replaced by
+   * JWT-based platform-admin authorization when the identity module lands.
+   */
+  @IsString()
+  @IsNotEmpty()
+  PLATFORM_ADMIN_API_KEY: string;
 }
 
 export function validate(
