@@ -44,6 +44,8 @@ export type Permission =
   | 'users:invite'
   | 'memberships:update'
   | 'tenants:manage'
+  | 'customers:read'
+  | 'customers:manage'
   | 'shipments:create'
   | 'shipments:read'
   | 'shipments:read-own'
@@ -55,6 +57,10 @@ export type Permission =
   | 'routes:read-own'
   | 'fleet:read'
   | 'fleet:manage'
+  | 'drivers:read'
+  | 'drivers:manage'
+  | 'drivers:manage-own'
+  | 'drivers:manage-availability'
   | 'reports:read'
   | 'quotes:create'
   | 'profile:read-own';
@@ -62,18 +68,23 @@ export type Permission =
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[] | ['*']> = {
   tenant_admin: ['*'],
   dispatcher: [
+    'customers:read',
+    'customers:manage',
     'shipments:create',
     'shipments:read',
     'shipments:update',
     'dispatch:manage',
     'routes:manage',
     'fleet:read',
+    'drivers:read',
+    'drivers:manage-availability',
     'reports:read',
   ],
   driver: [
     'shipments:read-assigned',
     'shipments:update-status',
     'routes:read-own',
+    'drivers:manage-own',
     'profile:read-own',
   ],
   customer: ['shipments:create', 'shipments:read-own', 'quotes:create', 'profile:read-own'],

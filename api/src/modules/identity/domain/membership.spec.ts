@@ -26,6 +26,20 @@ describe('role permissions', () => {
     expect(roleHasPermission('customer', 'shipments:read-own')).toBe(true);
     expect(roleHasPermission('customer', 'routes:manage')).toBe(false);
   });
+
+  it('covers customers, fleet, and drivers per the role table', () => {
+    expect(roleHasPermission('dispatcher', 'customers:read')).toBe(true);
+    expect(roleHasPermission('dispatcher', 'customers:manage')).toBe(true);
+    expect(roleHasPermission('dispatcher', 'drivers:read')).toBe(true);
+    expect(roleHasPermission('dispatcher', 'drivers:manage-availability')).toBe(
+      true,
+    );
+    expect(roleHasPermission('dispatcher', 'drivers:manage')).toBe(false);
+    expect(roleHasPermission('dispatcher', 'fleet:manage')).toBe(false);
+    expect(roleHasPermission('driver', 'drivers:manage-own')).toBe(true);
+    expect(roleHasPermission('driver', 'customers:read')).toBe(false);
+    expect(roleHasPermission('customer', 'customers:manage')).toBe(false);
+  });
 });
 
 describe('isRole', () => {

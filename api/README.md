@@ -165,6 +165,25 @@ credentials, and tokens:
 Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
 `15m`), `JWT_REFRESH_TTL_DAYS` (default `30`).
 
+## Customers, fleet, and drivers
+
+- `CustomersModule`: customer profiles plus nested addresses
+  (`/customers`, `/customers/:id/addresses` with full CRUD on both).
+  Coordinates persist as PostGIS `geography(Point, 4326)` with a GiST index;
+  the repository uses explicit parameterized SQL for the spatial column
+  because TypeORM cannot map `geography` values, and RLS applies to raw SQL
+  exactly as to ORM queries.
+- `FleetModule`: vehicle registration (`/vehicles` CRUD) with per-tenant
+  plate uniqueness (`VEHICLE_PLATE_TAKEN` on collision).
+- `DriversModule`: driver profiles linked to memberships (`/drivers` CRUD),
+  shifts (`/drivers/:id/shifts`, end-after-start enforced as 422),
+  self-service `PATCH /drivers/me/availability`, and dispatcher-managed
+  `PATCH /drivers/:id/availability`. Duplicate profiles and licenses map to
+  distinct codes (`DRIVER_EXISTS`, `LICENSE_TAKEN`).
+- New permissions (`customers:read/manage`, `fleet:manage`, `drivers:*`)
+  extend the role map: dispatchers read fleet/drivers and manage customers
+  and availability; drivers only touch their own availability.
+
 ## Configuration
 
 Every environment variable is validated at boot with a schema in
@@ -182,6 +201,9 @@ src/
   health/                 # liveness and readiness probes
   modules/tenants/        # tenant registry (domain/app/infrastructure/presentation)
   modules/identity/       # users, memberships, auth, RBAC guards
+  modules/customers/      # customer profiles and saved addresses
+  modules/fleet/          # vehicles
+  modules/drivers/        # driver profiles, shifts, availability
   shared/tenancy/         # CLS context, transaction interceptor, tenancy module
   app.module.ts           # root module
   app.setup.ts            # shared HTTP pipeline (prefix, pipes, CORS, Swagger)

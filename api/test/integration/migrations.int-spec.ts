@@ -64,6 +64,9 @@ describe('Database migrations (integration)', () => {
       'CreateRefreshTokens1756000000004',
       'CreateAuthTokens1756000000005',
       'MembershipLookupFunction1756000000006',
+      'CreateCustomers1756000000007',
+      'CreateFleet1756000000008',
+      'CreateDrivers1756000000009',
     ]);
   });
 
