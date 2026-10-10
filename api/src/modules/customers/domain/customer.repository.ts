@@ -18,6 +18,8 @@ export interface CustomerRepository {
   create(input: CreateCustomerInput & { tenantId: string }): Promise<Customer>;
   findById(id: string): Promise<Customer | null>;
   listByTenant(tenantId: string): Promise<Customer[]>;
+  /** Customer profiles linked to a portal login (ownership policies). */
+  listByUserId(tenantId: string, userId: string): Promise<Customer[]>;
   update(id: string, changes: UpdateCustomerInput): Promise<Customer | null>;
   remove(id: string): Promise<boolean>;
 }

@@ -67,6 +67,8 @@ describe('Database migrations (integration)', () => {
       'CreateCustomers1756000000007',
       'CreateFleet1756000000008',
       'CreateDrivers1756000000009',
+      'CreatePricing1756000000010',
+      'CreateShipments1756000000011',
     ]);
   });
 

@@ -10,6 +10,8 @@ import { MembershipLookupFunction1756000000006 } from './migrations/175600000000
 import { CreateCustomers1756000000007 } from './migrations/1756000000007-create-customers.js';
 import { CreateFleet1756000000008 } from './migrations/1756000000008-create-fleet.js';
 import { CreateDrivers1756000000009 } from './migrations/1756000000009-create-drivers.js';
+import { CreatePricing1756000000010 } from './migrations/1756000000010-create-pricing.js';
+import { CreateShipments1756000000011 } from './migrations/1756000000011-create-shipments.js';
 
 /**
  * Migrations are listed explicitly rather than loaded from a filesystem glob.
@@ -27,6 +29,8 @@ export const migrations = [
   CreateCustomers1756000000007,
   CreateFleet1756000000008,
   CreateDrivers1756000000009,
+  CreatePricing1756000000010,
+  CreateShipments1756000000011,
 ];
 
 /**

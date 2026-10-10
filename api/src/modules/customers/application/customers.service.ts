@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -39,6 +40,11 @@ export class CustomersService {
     return this.customers.listByTenant(tenantId);
   }
 
+  /** Customer profiles linked to a portal login (ownership policies). */
+  listCustomersByUser(tenantId: string, userId: string): Promise<Customer[]> {
+    return this.customers.listByUserId(tenantId, userId);
+  }
+
   async getCustomer(tenantId: string, id: string): Promise<Customer> {
     const customer = await this.customers.findById(id);
     if (!customer || customer.tenantId !== tenantId) {
@@ -68,7 +74,20 @@ export class CustomersService {
     if (!customer || customer.tenantId !== tenantId) {
       throw customerNotFound(id);
     }
-    await this.customers.remove(id);
+    try {
+      await this.customers.remove(id);
+    } catch (error) {
+      // Shipments RESTRICT their customer and addresses: business records
+      // outlive the profile row, so a referenced customer cannot be erased.
+      if (isForeignKeyViolation(error)) {
+        throw new ConflictException({
+          message:
+            `Customer ${id} is referenced by shipments and cannot be deleted.`,
+          code: 'CUSTOMER_IN_USE',
+        });
+      }
+      throw error;
+    }
   }
 
   async createAddress(
@@ -105,6 +124,18 @@ export class CustomersService {
       address.tenantId !== tenantId ||
       address.customerId !== customerId
     ) {
+      throw addressNotFound(id);
+    }
+    return address;
+  }
+
+  /**
+   * Tenant-scoped address lookup without a parent customer, for callers that
+   * only know the address id (quotes and shipments).
+   */
+  async getAddressById(tenantId: string, id: string): Promise<Address> {
+    const address = await this.addresses.findById(id);
+    if (!address || address.tenantId !== tenantId) {
       throw addressNotFound(id);
     }
     return address;

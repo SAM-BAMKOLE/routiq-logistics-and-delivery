@@ -57,6 +57,22 @@ describe('PermissionsGuard', () => {
     });
   });
 
+  it('admits a role holding any one of several permissions', () => {
+    const guard = guardWith(
+      { tenantId: 't-1', userId: 'u-1', role: 'dispatcher', isPlatformAdmin: false },
+      ['shipments:read-own', 'shipments:read'],
+    );
+    expect(guard.canActivate(emptyContext())).toBe(true);
+  });
+
+  it('denies a role holding none of several permissions', () => {
+    const guard = guardWith(
+      { tenantId: 't-1', userId: 'u-1', role: 'dispatcher', isPlatformAdmin: false },
+      ['users:invite', 'pricing:manage'],
+    );
+    expect(() => guard.canActivate(emptyContext())).toThrow(ForbiddenException);
+  });
+
   it('denies requests with no tenant principal', () => {
     const guard = guardWith(undefined, ['users:read']);
     expect(() =>

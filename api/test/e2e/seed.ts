@@ -24,6 +24,13 @@ export interface E2EAuthFixture {
   driverBId: string;
   /** Vehicle id in tenant B (for assignment checks). */
   vehicleBId: string;
+  /** Portal customer (role customer) in tenant B with a linked profile. */
+  customerEmail: string;
+  customerPassword: string;
+  customerId: string;
+  /** The customer's two saved addresses in tenant B (geocoded). */
+  pickupAddressId: string;
+  dropoffAddressId: string;
 }
 
 const PASSWORD = 'Password-123';
@@ -44,19 +51,21 @@ export async function seedAuthFixture(): Promise<E2EAuthFixture> {
     const adminEmail = `admin-${tag}@example.com`;
     const driverEmail = `driver-${tag}@example.com`;
     const opsBEmail = `ops-b-${tag}@example.com`;
+    const customerEmail = `customer-${tag}@example.com`;
     const userRows = (await owner.query(
       `INSERT INTO users (email, password_hash, is_platform_admin)
-       VALUES ($1, $2, true), ($3, $2, false), ($4, $2, false), ($5, $2, false)
+       VALUES ($1, $2, true), ($3, $2, false), ($4, $2, false), ($5, $2, false),
+              ($6, $2, false)
        RETURNING id`,
-      [platformEmail, passwordHash, adminEmail, driverEmail, opsBEmail],
+      [platformEmail, passwordHash, adminEmail, driverEmail, opsBEmail, customerEmail],
     )) as Array<{ id: string }>;
 
     const membershipRows = (await owner.query(
       `INSERT INTO memberships (tenant_id, user_id, role)
        VALUES ($1, $2, 'tenant_admin'), ($3, $2, 'dispatcher'), ($3, $4, 'driver'),
-              ($3, $5, 'tenant_admin')
+              ($3, $5, 'tenant_admin'), ($3, $6, 'customer')
        RETURNING id`,
-      [tenants[0].id, userRows[1].id, tenants[1].id, userRows[2].id, userRows[3].id],
+      [tenants[0].id, userRows[1].id, tenants[1].id, userRows[2].id, userRows[3].id, userRows[4].id],
     )) as Array<{ id: string }>;
 
     const vehicleRows = (await owner.query(
@@ -73,6 +82,24 @@ export async function seedAuthFixture(): Promise<E2EAuthFixture> {
       [tenants[1].id, membershipRows[2].id, `DL-${tag.slice(0, 8)}`, vehicleRows[0].id],
     )) as Array<{ id: string }>;
 
+    // A portal customer in tenant B with a linked profile and two geocoded
+    // addresses, so quotes and shipment creation work without extra setup.
+    const customerRows = (await owner.query(
+      `INSERT INTO customers (tenant_id, user_id, name)
+       VALUES ($1, $2, 'Portal Customer')
+       RETURNING id`,
+      [tenants[1].id, userRows[4].id],
+    )) as Array<{ id: string }>;
+    const addressRows = (await owner.query(
+      `INSERT INTO addresses (tenant_id, customer_id, line1, city, country, location)
+       VALUES ($1, $2, '14 Warehouse Road', 'Lagos', 'NG',
+               ST_SetSRID(ST_MakePoint(3.3792, 6.5244), 4326)::geography),
+              ($1, $2, '1 Independence Way', 'Abuja', 'NG',
+               ST_SetSRID(ST_MakePoint(7.4951, 9.0579), 4326)::geography)
+       RETURNING id`,
+      [tenants[1].id, customerRows[0].id],
+    )) as Array<{ id: string }>;
+
     return {
       tenantA: tenants[0].id,
       tenantB: tenants[1].id,
@@ -86,6 +113,11 @@ export async function seedAuthFixture(): Promise<E2EAuthFixture> {
       opsBPassword: PASSWORD,
       driverBId: driverRows[0].id,
       vehicleBId: vehicleRows[0].id,
+      customerEmail,
+      customerPassword: PASSWORD,
+      customerId: customerRows[0].id,
+      pickupAddressId: addressRows[0].id,
+      dropoffAddressId: addressRows[1].id,
     };
   } finally {
     if (owner.isInitialized) {

@@ -5,9 +5,10 @@ import type { Permission } from '../../domain/membership.js';
 export const PERMISSIONS_KEY = 'ldms:permissions';
 
 /**
- * Names the permissions a route needs, e.g.
- * `@RequirePermissions('users:invite')`. Roles map to permissions in
- * {@link ROLE_PERMISSIONS}; `tenant_admin` holds `'*'`.
+ * Names the permissions a route accepts, e.g.
+ * `@RequirePermissions('users:invite')`. The role needs **at least one** of
+ * them (any-of). Roles map to permissions in {@link ROLE_PERMISSIONS};
+ * `tenant_admin` holds `'*'`.
  */
 export const RequirePermissions = (...permissions: Permission[]): MethodDecorator & ClassDecorator =>
   SetMetadata(PERMISSIONS_KEY, permissions);

@@ -44,6 +44,14 @@ export class TypeOrmCustomerRepository implements CustomerRepository {
     return entities.map(toDomain);
   }
 
+  async listByUserId(tenantId: string, userId: string): Promise<Customer[]> {
+    const entities = await this.repository().find({
+      where: { tenantId, userId },
+      order: { createdAt: 'ASC' },
+    });
+    return entities.map(toDomain);
+  }
+
   async update(
     id: string,
     changes: UpdateCustomerInput,

@@ -158,8 +158,9 @@ credentials, and tokens:
   email it. Email verification and password reset follow the same token shape
   and land with email delivery.
 - Roles (`tenant_admin`, `dispatcher`, `driver`, `customer`) map to
-  permissions in code; routes declare needs with `@RequirePermissions(...)`,
-  enforced by `PermissionsGuard` after `JwtAuthGuard`. A tenant always keeps
+  permissions in code; routes declare needs with `@RequirePermissions(...)`
+  (any listed permission satisfies the guard), enforced by
+  `PermissionsGuard` after `JwtAuthGuard`. A tenant always keeps
   one active admin — demoting or suspending the last one is a 409.
 
 Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
@@ -184,6 +185,41 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
   extend the role map: dispatchers read fleet/drivers and manage customers
   and availability; drivers only touch their own availability.
 
+## Pricing
+
+- `PricingModule`: tenant rate cards (`/pricing-rules` CRUD, tenant_admin
+  only via `pricing:read`/`pricing:manage`) and `POST /quotes`, which prices
+  a pickup-to-dropoff pair with the same engine shipments use at creation.
+- Rules carry `base_fee_minor`, `per_km_minor`, `per_kg_minor`,
+  `min_fee_minor`, optional `currency`, priority, and an active window.
+  The highest-priority active rule wins (ties break on later `active_from`,
+  then id); the price is
+  `max(base + perKm × km + perKg × kg, minFee)` in minor units.
+- Distance is the haversine between the addresses' stored coordinates
+  (null-safe: missing coordinates contribute 0 to the distance fee); no
+  active rule is a 422 `NO_ACTIVE_PRICING_RULE`. Currency comes from
+  `tenant.settings.currency` (default `NGN`).
+
+## Shipments
+
+- `ShipmentsModule`: `/shipments` with status-scoped lists, `If-Match`
+  optimistic concurrency on every state change, append-only
+  `shipment_status_history`, and tracking numbers (`SHP-` + 12 Crockford
+  base32 chars, collision-retried).
+- The state machine has ten statuses and thirteen transitions: cancel only
+  before pickup, a failed attempt retries to out-for-delivery until
+  `tenant.settings.maxFailedAttempts` (default 3) forces a return, and
+  delivered/returned/cancelled are terminal. `requireProofOfDelivery`
+  (default false) will block `deliver` with 422 `PROOF_REQUIRED` until
+  proof-of-delivery lands in Step 10. The full transition table is asserted
+  in [`src/modules/shipments/domain/shipment.spec.ts`](src/modules/shipments/domain/shipment.spec.ts).
+- Every action endpoint requires `If-Match` with the version from the
+  response `ETag`: missing is 428 `PRECONDITION_REQUIRED`, stale is 412
+  `VERSION_MISMATCH`. Shipments are quoted synchronously at creation
+  (`price_minor` is never null), addresses and customers are
+  `ON DELETE RESTRICT`, and drivers cannot touch unassigned shipments yet
+  (`SHIPMENT_NOT_ASSIGNED` until dispatch in Step 8).
+
 ## Configuration
 
 Every environment variable is validated at boot with a schema in
@@ -204,6 +240,8 @@ src/
   modules/customers/      # customer profiles and saved addresses
   modules/fleet/          # vehicles
   modules/drivers/        # driver profiles, shifts, availability
+  modules/pricing/        # tenant rate cards and the quote engine
+  modules/shipments/      # aggregate, state machine, history, tracking
   shared/tenancy/         # CLS context, transaction interceptor, tenancy module
   app.module.ts           # root module
   app.setup.ts            # shared HTTP pipeline (prefix, pipes, CORS, Swagger)

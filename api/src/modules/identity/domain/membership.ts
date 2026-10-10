@@ -63,6 +63,8 @@ export type Permission =
   | 'drivers:manage-availability'
   | 'reports:read'
   | 'quotes:create'
+  | 'pricing:read'
+  | 'pricing:manage'
   | 'profile:read-own';
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[] | ['*']> = {

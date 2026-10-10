@@ -44,10 +44,14 @@ export class PermissionsGuard implements CanActivate {
       });
     }
 
-    const missing = required.filter(
-      (permission) => !roleHasPermission(role, permission),
+    // Any-of semantics: a route can accept several alternatives, e.g.
+    // `@RequirePermissions('shipments:read', 'shipments:read-own')` lets
+    // dispatchers and customers through, and the application layer then
+    // scopes what each of them may see.
+    const allowed = required.some((permission) =>
+      roleHasPermission(role, permission),
     );
-    if (missing.length > 0) {
+    if (!allowed) {
       throw new ForbiddenException({
         message: `The '${role}' role cannot perform this action.`,
         code: 'PERMISSION_DENIED',

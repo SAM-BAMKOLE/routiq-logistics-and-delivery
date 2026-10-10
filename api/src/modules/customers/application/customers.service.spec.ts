@@ -70,6 +70,10 @@ function makeHarness(): Harness {
     findById: async (id) => customers.get(id) ?? null,
     listByTenant: async (tenantId) =>
       [...customers.values()].filter((c) => c.tenantId === tenantId),
+    listByUserId: async (tenantId, userId) =>
+      [...customers.values()].filter(
+        (c) => c.tenantId === tenantId && c.userId === userId,
+      ),
     update: async (id, changes: UpdateCustomerInput) => {
       const current = customers.get(id);
       if (!current) return null;

@@ -12,6 +12,8 @@ import { CustomersModule } from './modules/customers/customers.module.js';
 import { DriversModule } from './modules/drivers/drivers.module.js';
 import { FleetModule } from './modules/fleet/fleet.module.js';
 import { IdentityModule } from './modules/identity/identity.module.js';
+import { PricingModule } from './modules/pricing/pricing.module.js';
+import { ShipmentsModule } from './modules/shipments/shipments.module.js';
 import { TenantsModule } from './modules/tenants/tenants.module.js';
 import { TenancyModule } from './shared/tenancy/tenancy.module.js';
 import { validate } from './config/env.validation.js';
@@ -61,6 +63,8 @@ import { validate } from './config/env.validation.js';
     CustomersModule,
     FleetModule,
     DriversModule,
+    PricingModule,
+    ShipmentsModule,
   ],
   controllers: [AppController],
   providers: [

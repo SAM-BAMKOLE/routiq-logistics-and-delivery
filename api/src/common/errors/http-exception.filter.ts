@@ -18,6 +18,7 @@ const DEFAULT_TITLES: Record<number, string> = {
   [HttpStatus.METHOD_NOT_ALLOWED]: 'Method not allowed',
   [HttpStatus.CONFLICT]: 'Conflict',
   [HttpStatus.PRECONDITION_FAILED]: 'Precondition failed',
+  [HttpStatus.PRECONDITION_REQUIRED]: 'Precondition required',
   [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: 'Unsupported media type',
   [HttpStatus.UNPROCESSABLE_ENTITY]: 'Unprocessable entity',
   [HttpStatus.TOO_MANY_REQUESTS]: 'Too many requests',
@@ -40,6 +41,8 @@ function defaultCodeForStatus(status: number): string {
       return 'CONFLICT';
     case HttpStatus.PRECONDITION_FAILED:
       return 'PRECONDITION_FAILED';
+    case HttpStatus.PRECONDITION_REQUIRED:
+      return 'PRECONDITION_REQUIRED';
     case HttpStatus.UNSUPPORTED_MEDIA_TYPE:
       return 'UNSUPPORTED_MEDIA_TYPE';
     case HttpStatus.UNPROCESSABLE_ENTITY:
