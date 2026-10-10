@@ -9,35 +9,32 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiCreatedResponse,
-  ApiHeader,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { TenantsService } from '../application/tenants.service.js';
+import { PlatformAdminGuard } from '../../identity/presentation/guards/platform-admin.guard.js';
 import { CreateTenantDto } from './dto/create-tenant.dto.js';
 import { TenantListResponseDto } from './dto/tenant-list-response.dto.js';
 import { TenantResponseDto } from './dto/tenant-response.dto.js';
 import { UpdateTenantDto } from './dto/update-tenant.dto.js';
-import {
-  PLATFORM_ADMIN_HEADER,
-  PlatformAdminGuard,
-} from './platform-admin.guard.js';
 
 /**
  * Platform administration: who the tenants are, not what each tenant does.
  *
  * These routes sit outside any tenant context (the registry is global), so no
- * tenant transaction is opened for them. Only platform admins may call them.
+ * tenant transaction is opened for them. Only users carrying the platform-admin
+ * flag may call them, proven by a JWT — never by a shared header secret.
  */
 @ApiTags('platform')
-@ApiHeader({
-  name: PLATFORM_ADMIN_HEADER,
-  description: 'Platform admin key (interim until JWT platform-admin lands).',
-})
-@ApiUnauthorizedResponse({ description: 'Missing or invalid platform admin key.' })
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ description: 'Missing, invalid, or expired access token.' })
+@ApiForbiddenResponse({ description: 'Valid token, but not a platform admin.' })
 @UseGuards(PlatformAdminGuard)
 @Controller('platform/tenants')
 export class PlatformTenantsController {

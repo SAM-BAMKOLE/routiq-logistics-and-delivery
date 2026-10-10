@@ -51,7 +51,7 @@ export class TenantTransactionService {
     fn: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
     return this.context.runWith(
-      { tenantId, userId: '', role: 'system' },
+      { tenantId, userId: '', role: 'system', isPlatformAdmin: false },
       () => this.inTenantTransaction(fn),
     );
   }

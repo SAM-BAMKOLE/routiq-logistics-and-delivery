@@ -1,22 +1,25 @@
-import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
+import { seedAuthFixture, type E2EAuthFixture } from './e2e/seed.js';
 
 /**
- * Platform tenants API against a real PostGIS database: create / list / update
- * with the interim platform-admin key, and the RFC 9457 error shapes for the
- * failure modes (bad key, bad payload, duplicate slug, unknown tenant).
+ * Platform tenants API against a real PostGIS database, authorized by JWT
+ * platform-admin sessions: missing/invalid/non-admin tokens are rejected with
+ * stable codes, and admins get the full create/list/get/update contract.
  */
 describe('Platform tenants API (e2e)', () => {
   let app: INestApplication;
-  let adminKey: string;
+  let fixture: E2EAuthFixture;
+  let adminToken: string;
+  let tenantToken: string;
 
   beforeAll(async () => {
-    adminKey = process.env.PLATFORM_ADMIN_API_KEY ?? '';
+    fixture = await seedAuthFixture();
 
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
@@ -25,18 +28,29 @@ describe('Platform tenants API (e2e)', () => {
     app = moduleFixture.createNestApplication();
     configureApp(app, app.get(ConfigService));
     await app.init();
+
+    adminToken = await login(fixture.platformEmail, fixture.platformPassword);
+    tenantToken = await login(fixture.adminEmail, fixture.adminPassword);
   });
 
   afterAll(async () => {
     await app.close();
   });
 
+  async function login(email: string, password: string): Promise<string> {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email, password })
+      .expect(201);
+    return res.body.accessToken as string;
+  }
+
   function uniqueSlug(): string {
     return `acme-${randomUUID()}`;
   }
 
-  describe('authentication', () => {
-    it('rejects a request without the platform admin key', async () => {
+  describe('authorization', () => {
+    it('rejects a request without a token', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/platform/tenants')
         .send({ name: 'Ghost Logistics', slug: uniqueSlug() })
@@ -45,17 +59,33 @@ describe('Platform tenants API (e2e)', () => {
 
       expect(res.body).toMatchObject({
         status: 401,
-        code: 'PLATFORM_ADMIN_KEY_INVALID',
+        code: 'ACCESS_TOKEN_MISSING',
       });
       expect(res.body.correlationId).toEqual(expect.any(String));
     });
 
-    it('rejects a request with a wrong platform admin key', async () => {
+    it('rejects a request with a forged token', async () => {
       await request(app.getHttpServer())
         .post('/api/v1/platform/tenants')
-        .set('x-platform-admin-key', 'not-the-key')
+        .set('Authorization', 'Bearer forged-token')
         .send({ name: 'Ghost Logistics', slug: uniqueSlug() })
-        .expect(401);
+        .expect(401)
+        .expect((res) => {
+          expect(res.body.code).toBe('ACCESS_TOKEN_INVALID');
+        });
+    });
+
+    it('rejects an authenticated tenant user without the admin flag', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/platform/tenants')
+        .set('Authorization', `Bearer ${tenantToken}`)
+        .send({ name: 'Ghost Logistics', slug: uniqueSlug() })
+        .expect(403);
+
+      expect(res.body).toMatchObject({
+        status: 403,
+        code: 'PLATFORM_ADMIN_REQUIRED',
+      });
     });
   });
 
@@ -63,7 +93,7 @@ describe('Platform tenants API (e2e)', () => {
     it('creates a tenant with defaults', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/platform/tenants')
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Acme Logistics', slug: uniqueSlug() })
         .expect(201);
 
@@ -80,13 +110,13 @@ describe('Platform tenants API (e2e)', () => {
       const slug = uniqueSlug();
       await request(app.getHttpServer())
         .post('/api/v1/platform/tenants')
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'First', slug })
         .expect(201);
 
       const res = await request(app.getHttpServer())
         .post('/api/v1/platform/tenants')
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Second', slug })
         .expect(409);
 
@@ -99,7 +129,7 @@ describe('Platform tenants API (e2e)', () => {
     it('rejects an invalid payload with field-level errors', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/platform/tenants')
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'A', slug: 'UPPER CASE !' })
         .expect(400);
 
@@ -115,7 +145,7 @@ describe('Platform tenants API (e2e)', () => {
     it('lists tenants and returns envelopes with a data array', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/platform/tenants')
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
       expect(Array.isArray(res.body.data)).toBe(true);
@@ -124,13 +154,13 @@ describe('Platform tenants API (e2e)', () => {
     it('gets a single tenant by id', async () => {
       const created = await request(app.getHttpServer())
         .post('/api/v1/platform/tenants')
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Solo Logistics', slug: uniqueSlug() })
         .expect(201);
 
       const res = await request(app.getHttpServer())
         .get(`/api/v1/platform/tenants/${created.body.id}`)
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
       expect(res.body.id).toBe(created.body.id);
@@ -140,13 +170,13 @@ describe('Platform tenants API (e2e)', () => {
     it('updates tenant status and plan', async () => {
       const created = await request(app.getHttpServer())
         .post('/api/v1/platform/tenants')
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Mutable Logistics', slug: uniqueSlug() })
         .expect(201);
 
       const res = await request(app.getHttpServer())
         .patch(`/api/v1/platform/tenants/${created.body.id}`)
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'suspended', plan: 'enterprise' })
         .expect(200);
 
@@ -159,7 +189,7 @@ describe('Platform tenants API (e2e)', () => {
     it('returns 404 for an unknown tenant id', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/platform/tenants/6c83a8a9-9f3e-4c7e-8f2d-000000000000')
-        .set('x-platform-admin-key', adminKey)
+        .set('Authorization', `Bearer ${adminToken}`)
         .expect(404);
 
       expect(res.body).toMatchObject({

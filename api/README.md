@@ -100,10 +100,15 @@ pnpm test:e2e
 Every tenant-scoped request flows through one pipeline, so no endpoint can
 forget to isolate:
 
-1. A guard (next step: JWT auth) verifies the caller and puts a `TenantPrincipal`
-   (`tenantId`, `userId`, `role`) into the request-scoped context
+1. `JwtAuthGuard` verifies the Bearer access token, then revalidates against the
+   database — the token is a hint, the database decides: the user must be
+   active, the membership must be active, and the tenant must not be
+   suspended. The resulting `TenantPrincipal` (`tenantId`, `userId`, `role`,
+   `isPlatformAdmin`) goes into the request-scoped context
    ([CLS](src/shared/tenancy/tenant-context.service.ts), backed by
-   `AsyncLocalStorage`).
+   `AsyncLocalStorage`). Login itself has no token yet, so it lists the
+   user's memberships through the `list_user_memberships` SECURITY DEFINER
+   function (migration `...0006`), which returns only that user's rows.
 2. The global `TenantTransactionInterceptor` opens a transaction and binds
    `app.tenant_id` to it (`SET LOCAL`-equivalent through `set_config`).
 3. Repositories resolve their entity manager from the `TransactionHost`, so they
@@ -123,10 +128,42 @@ via `enableTenantIsolation`.
 ## Platform API
 
 Platform administration is served under `/api/v1/platform/tenants` (create,
-list, get, update). It is guarded by an **interim** shared secret sent as the
-`x-platform-admin-key` header, configured with `PLATFORM_ADMIN_API_KEY`. When
-the identity module lands, this is replaced by JWT verification with the
-`is_platform_admin` claim — the routes and contract stay the same.
+list, get, update). It requires a JWT whose `adm` claim is true — the
+platform-admin flag on the user, not a tenant role. No tenant context is set
+for these requests, so RLS returns no tenant data by design.
+
+The first platform admin cannot log in before existing, so environments are
+bootstrapped once with:
+
+```bash
+pnpm db:seed:platform-admin --email ops@example.com --password '…' [--name '…']
+```
+
+## Identity and RBAC
+
+The `IdentityModule` (`src/modules/identity/`) owns users, memberships,
+credentials, and tokens:
+
+- Passwords are hashed with Argon2id; unknown users and wrong passwords
+  return the identical `INVALID_CREDENTIALS` 401.
+- Access tokens are short-lived JWTs (`sub`, `tid`, `role`, `adm`); refresh
+  tokens are opaque, stored by SHA-256 hash only, and rotated on every use.
+  Replaying a revoked token revokes the whole token family
+  (`REFRESH_TOKEN_REUSED`).
+- `POST /auth/switch-tenant` re-scopes a session to another membership of the
+  same user, rotating the refresh token as well.
+- Invitations are single-use hashed tokens (`POST /users/invitations` →
+  `POST /auth/accept-invite`, which sets the password and auto-logs-in). The
+  invite token is returned in the response until the Notifications module can
+  email it. Email verification and password reset follow the same token shape
+  and land with email delivery.
+- Roles (`tenant_admin`, `dispatcher`, `driver`, `customer`) map to
+  permissions in code; routes declare needs with `@RequirePermissions(...)`,
+  enforced by `PermissionsGuard` after `JwtAuthGuard`. A tenant always keeps
+  one active admin — demoting or suspending the last one is a 409.
+
+Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
+`15m`), `JWT_REFRESH_TTL_DAYS` (default `30`).
 
 ## Configuration
 
@@ -144,6 +181,7 @@ src/
   database/               # data source, naming strategy, migrations, RLS helper
   health/                 # liveness and readiness probes
   modules/tenants/        # tenant registry (domain/app/infrastructure/presentation)
+  modules/identity/       # users, memberships, auth, RBAC guards
   shared/tenancy/         # CLS context, transaction interceptor, tenancy module
   app.module.ts           # root module
   app.setup.ts            # shared HTTP pipeline (prefix, pipes, CORS, Swagger)

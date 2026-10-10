@@ -10,13 +10,21 @@ import {
  * The isolation guarantee across the whole schema.
  *
  * - A schema-level guard proves that *every* table carrying a `tenant_id`
- *   column has RLS enabled, forced and protected by the `tenant_isolation`
- *   policy — so a future table cannot silently be added without isolation.
+ *   column is either RLS-isolated or explicitly classified global (with the
+ *   reason recorded) — so a future table cannot silently be added without
+ *   isolation.
  * - Behavioral checks prove the claim from the architecture doc: seed two
  *   tenants, deliberately run an unfiltered `SELECT` under tenant A, and
  *   assert that no tenant B row appears — through the restricted `ldms_app`
  *   role.
  */
+
+/**
+ * Global tables that reference a tenant without being tenant-scoped. Each
+ * entry is a deliberate exception to the isolation rule, reviewed here rather
+ * than scattered through migrations.
+ */
+const GLOBAL_TABLES_WITH_TENANT_REF = ['refresh_tokens'];
 describe('Tenant isolation across the schema (integration)', () => {
   let owner: DataSource;
   let app: DataSource;
@@ -52,6 +60,18 @@ describe('Tenant isolation across the schema (integration)', () => {
     expect(tenantTables.length).toBeGreaterThan(0);
 
     for (const { table_name } of tenantTables) {
+      if (GLOBAL_TABLES_WITH_TENANT_REF.includes(table_name)) {
+        // Deliberately global: platform sessions carry no tenant, so their
+        // refresh rows must stay readable without one. Rows are bound to
+        // their user in the application layer instead.
+        const [flags] = (await owner.query(
+          `SELECT relrowsecurity AS rls FROM pg_class WHERE relname = $1`,
+          [table_name],
+        )) as Array<{ rls: boolean }>;
+        expect(flags.rls).toBe(false);
+        continue;
+      }
+
       const [flags] = (await owner.query(
         `SELECT relrowsecurity, relforcerowsecurity
            FROM pg_class WHERE relname = $1`,

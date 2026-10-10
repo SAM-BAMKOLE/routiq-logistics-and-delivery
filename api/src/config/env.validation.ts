@@ -60,12 +60,26 @@ export class EnvironmentVariables {
   DATABASE_URL: string;
 
   /**
-   * Shared secret for the platform administration API. Interim: replaced by
-   * JWT-based platform-admin authorization when the identity module lands.
+   * HMAC secret signing the short-lived access tokens. No default: a leaked
+   * or guessable default would forge any identity, so the app refuses to boot
+   * without an explicit value.
    */
   @IsString()
   @IsNotEmpty()
-  PLATFORM_ADMIN_API_KEY: string;
+  JWT_ACCESS_SECRET: string;
+
+  /** Access-token lifetime, in a format like `15m` or `3600s`. */
+  @IsString()
+  @IsOptional()
+  JWT_ACCESS_TTL: string = '15m';
+
+  /** Refresh-token lifetime in days. Rotation happens on every use. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  @IsOptional()
+  JWT_REFRESH_TTL_DAYS: number = 30;
 }
 
 export function validate(

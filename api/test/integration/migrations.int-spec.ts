@@ -61,6 +61,9 @@ describe('Database migrations (integration)', () => {
       'CreateTenants1756000000001',
       'CreateUsers1756000000002',
       'CreateMemberships1756000000003',
+      'CreateRefreshTokens1756000000004',
+      'CreateAuthTokens1756000000005',
+      'MembershipLookupFunction1756000000006',
     ]);
   });
 

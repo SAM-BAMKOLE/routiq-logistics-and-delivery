@@ -4,6 +4,9 @@ import { EnableExtensions1756000000000 } from './migrations/1756000000000-enable
 import { CreateTenants1756000000001 } from './migrations/1756000000001-create-tenants.js';
 import { CreateUsers1756000000002 } from './migrations/1756000000002-create-users.js';
 import { CreateMemberships1756000000003 } from './migrations/1756000000003-create-memberships.js';
+import { CreateRefreshTokens1756000000004 } from './migrations/1756000000004-create-refresh-tokens.js';
+import { CreateAuthTokens1756000000005 } from './migrations/1756000000005-create-auth-tokens.js';
+import { MembershipLookupFunction1756000000006 } from './migrations/1756000000006-membership-lookup-function.js';
 
 /**
  * Migrations are listed explicitly rather than loaded from a filesystem glob.
@@ -15,6 +18,9 @@ export const migrations = [
   CreateTenants1756000000001,
   CreateUsers1756000000002,
   CreateMemberships1756000000003,
+  CreateRefreshTokens1756000000004,
+  CreateAuthTokens1756000000005,
+  MembershipLookupFunction1756000000006,
 ];
 
 /**

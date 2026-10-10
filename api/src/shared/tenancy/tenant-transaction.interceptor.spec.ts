@@ -11,6 +11,7 @@ describe('TenantTransactionInterceptor', () => {
     tenantId: 't-1',
     userId: 'u-1',
     role: 'dispatcher',
+    isPlatformAdmin: false,
   };
 
   function contextFor(_tenant: TenantPrincipal | undefined): ExecutionContext {

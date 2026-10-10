@@ -3,12 +3,24 @@ import { ClsService } from 'nestjs-cls';
 import { TenantContextService } from './tenant-context.service.js';
 
 describe('TenantContextService', () => {
-  const cls = new ClsService<{ tenant?: { tenantId: string; userId: string; role: string } }>(
-    new AsyncLocalStorage(),
-  );
+  const cls = new ClsService<{
+    tenant?:
+      | {
+          tenantId: string;
+          userId: string;
+          role: string;
+          isPlatformAdmin: boolean;
+        }
+      | undefined;
+  }>(new AsyncLocalStorage());
   const service = new TenantContextService(cls);
 
-  const principal = { tenantId: 't-1', userId: 'u-1', role: 'dispatcher' };
+  const principal = {
+    tenantId: 't-1',
+    userId: 'u-1',
+    role: 'dispatcher',
+    isPlatformAdmin: false,
+  };
 
   afterEach(() => {
     // Ensure no context leaks between tests.

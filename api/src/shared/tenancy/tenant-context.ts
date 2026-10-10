@@ -11,6 +11,11 @@ export interface TenantPrincipal {
   tenantId: string;
   userId: string;
   role: string;
+  /**
+   * Whether the user carries the platform-admin flag. Platform routes check
+   * this instead of a tenant role; tenant routes still authorize by role.
+   */
+  isPlatformAdmin: boolean;
 }
 
 /** Key under which the principal is stored in the CLS store. */

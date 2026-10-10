@@ -16,6 +16,6 @@ const state = JSON.parse(readFileSync(STATE_FILE, 'utf8')) as {
 
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = state.appUrl;
-process.env.PLATFORM_ADMIN_API_KEY = 'e2e-platform-admin-key';
+process.env.JWT_ACCESS_SECRET = 'e2e-test-access-secret-min-32-chars-long';
 
 void state;

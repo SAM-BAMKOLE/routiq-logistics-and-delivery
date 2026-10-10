@@ -33,7 +33,7 @@ describe('Tenancy kernel (integration)', () => {
     [tenantA, tenantB] = await seedTenantsAndMemberships(owner);
 
     process.env.DATABASE_URL = readDatabaseState().appUrl;
-    process.env.PLATFORM_ADMIN_API_KEY = 'integration-test-key';
+    process.env.JWT_ACCESS_SECRET = 'integration-test-access-secret-min-32-chars';
 
     const moduleRef = await Test.createTestingModule({
       imports: [
