@@ -11,6 +11,9 @@ out/
 # Test coverage
 coverage/
 
+# Integration test runtime handoff (container connection details)
+api/test/integration/.runtime-state.json
+
 # Environment — never commit real secrets. Commit .env.example instead.
 .env
 .env.*

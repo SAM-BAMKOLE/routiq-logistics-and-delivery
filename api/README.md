@@ -38,6 +38,7 @@ docker compose up -d          # Postgres+PostGIS, Redis, Mailpit
 cd api
 pnpm install
 cp .env.example .env          # then adjust values as needed
+pnpm db:migrate               # apply schema migrations
 pnpm start:dev                # http://localhost:3000
 ```
 
@@ -60,6 +61,37 @@ Once running:
 | `pnpm test` | Unit tests (Jest) |
 | `pnpm test:cov` | Unit tests with coverage |
 | `pnpm test:e2e` | End-to-end tests over HTTP |
+| `pnpm test:integration` | Integration tests against a throwaway PostGIS container |
+| `pnpm db:migrate` | Apply pending migrations |
+| `pnpm db:migrate:show` | List applied and pending migrations |
+| `pnpm db:migrate:revert` | Roll back the last migration |
+
+## Database
+
+PostgreSQL + PostGIS, accessed through TypeORM with migrations only
+(`synchronize` is permanently off — the schema is owned by migrations, so the
+running app can never reshape it).
+
+Two roles keep tenants isolated:
+
+| Role | Used by | Can do |
+| --- | --- | --- |
+| `ldms_owner` | Migrations (`MIGRATION_DATABASE_URL`) | Own tables, run DDL |
+| `ldms_app` | The running app (`DATABASE_URL`) | DML only; cannot run DDL; subject to Row Level Security |
+
+Locally, `docker compose up` provisions `ldms_app` on first boot (see
+[`../docker/initdb`](../docker/initdb)). Every tenant-owned table is isolated by
+calling `enableTenantIsolation(...)` from
+[`src/database/rls.ts`](src/database/rls.ts) inside its migration: the helper
+turns on and forces RLS, creates the `app.tenant_id` policy and indexes
+`tenant_id`, so no table can be forgotten.
+
+Integration tests boot a throwaway PostGIS container (Testcontainers), apply the
+migrations and exercise RLS through the restricted role:
+
+```bash
+pnpm test:integration
+```
 
 ## Configuration
 
@@ -74,10 +106,13 @@ for the full list and defaults.
 src/
   config/                 # env validation
   common/errors/          # RFC 9457 problem+json filter and exceptions
+  database/               # data source, naming strategy, migrations, RLS helper
   health/                 # liveness and readiness probes
   app.module.ts           # root module
   app.setup.ts            # shared HTTP pipeline (prefix, pipes, CORS, Swagger)
   main.ts                 # HTTP entrypoint
+test/
+  integration/            # PostGIS-backed integration tests (Testcontainers)
 ```
 
 Module boundaries (domain / application / infrastructure / presentation) arrive

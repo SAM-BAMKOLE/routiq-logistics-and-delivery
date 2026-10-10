@@ -48,5 +48,8 @@ jobs:
       - name: End-to-end tests
         run: pnpm test:e2e
 
+      - name: Integration tests (PostGIS via Testcontainers)
+        run: pnpm test:integration
+
       - name: Build
         run: pnpm build

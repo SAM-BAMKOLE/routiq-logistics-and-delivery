@@ -1,0 +1,33 @@
+import type { DataSourceOptions } from 'typeorm';
+import { SnakeNamingStrategy } from './naming.strategy.js';
+import { EnableExtensions1756000000000 } from './migrations/1756000000000-enable-extensions.js';
+import { CreateTenants1756000000001 } from './migrations/1756000000001-create-tenants.js';
+
+/**
+ * Migrations are listed explicitly rather than loaded from a filesystem glob.
+ * Under ESM there is no reliable `__dirname`, and an explicit list makes the
+ * applied order obvious and reviewable.
+ */
+export const migrations = [
+  EnableExtensions1756000000000,
+  CreateTenants1756000000001,
+];
+
+/**
+ * Builds the TypeORM options used by the migration CLI and the integration
+ * test harness. `synchronize` is permanently off: the schema is owned by
+ * migrations only, so a running app can never reshape the database.
+ */
+export function buildDataSourceOptions(url: string): DataSourceOptions {
+  return {
+    type: 'postgres',
+    url,
+    namingStrategy: new SnakeNamingStrategy(),
+    entities: [],
+    migrations,
+    migrationsTableName: 'migrations',
+    migrationsTransactionMode: 'each',
+    synchronize: false,
+    logging: ['error', 'warn', 'migration'],
+  };
+}
