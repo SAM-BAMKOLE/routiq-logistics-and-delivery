@@ -15,6 +15,8 @@ import { IdentityModule } from './modules/identity/identity.module.js';
 import { PricingModule } from './modules/pricing/pricing.module.js';
 import { ShipmentsModule } from './modules/shipments/shipments.module.js';
 import { TenantsModule } from './modules/tenants/tenants.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
+import { MessagingModule } from './shared/messaging/messaging.module.js';
 import { TenancyModule } from './shared/tenancy/tenancy.module.js';
 import { validate } from './config/env.validation.js';
 
@@ -57,6 +59,9 @@ import { validate } from './config/env.validation.js';
     // tenancy kernel wires its transaction adapter to the DataSource.
     DatabaseModule,
     TenancyModule,
+    // The event-bus port (global) must be registered before modules that
+    // publish or listen; NotificationsModule subscribes to its events.
+    MessagingModule,
     HealthModule,
     IdentityModule,
     TenantsModule,
@@ -65,6 +70,7 @@ import { validate } from './config/env.validation.js';
     DriversModule,
     PricingModule,
     ShipmentsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

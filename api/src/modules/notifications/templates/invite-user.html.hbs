@@ -1,0 +1,19 @@
+{{#> layout}}
+<h2 style="margin:0 0 12px;font-size:20px;color:{{accentColor}};">You're invited</h2>
+<p style="margin:0 0 16px;line-height:1.5;">
+  You have been invited to join <strong>{{tenantName}}</strong> on LDMS
+  with the <strong>{{role}}</strong> role.
+</p>
+<p style="margin:0 0 20px;">
+  <a href="{{inviteUrl}}" style="background:{{accentColor}};color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block;">
+    Accept your invitation
+  </a>
+</p>
+<p style="margin:0 0 8px;font-size:14px;color:#6b7280;">
+  This invitation expires in {{expiresInDays}} days. If the button does not
+  work, open this link instead:
+</p>
+<p style="margin:0;font-size:13px;word-break:break-all;">
+  <a href="{{inviteUrl}}" style="color:{{accentColor}};">{{inviteUrl}}</a>
+</p>
+{{/layout}}

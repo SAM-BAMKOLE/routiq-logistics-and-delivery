@@ -7,6 +7,7 @@ import type { MembershipRepository } from '../domain/membership.repository.js';
 import type { OneTimeTokenStore } from '../domain/token.repository.js';
 import type { User } from '../domain/user.js';
 import type { UserRepository } from '../domain/user.repository.js';
+import { FakeEventBus } from '../../../shared/messaging/testing/fake-event-bus.js';
 import { UsersService } from './users.service.js';
 
 function makeUser(id: string, email: string): User {
@@ -46,11 +47,13 @@ interface Harness {
   users: Map<string, User>;
   memberships: Membership[];
   issuedTokens: number;
+  bus: FakeEventBus;
 }
 
 function makeHarness(): Harness {
   const users = new Map<string, User>();
   const memberships: Membership[] = [];
+  const bus = new FakeEventBus();
   let issuedTokens = 0;
 
   const userRepository: UserRepository = {
@@ -114,9 +117,15 @@ function makeHarness(): Harness {
   };
 
   return {
-    service: new UsersService(userRepository, membershipRepository, oneTimeTokens),
+    service: new UsersService(
+      userRepository,
+      membershipRepository,
+      oneTimeTokens,
+      bus,
+    ),
     users,
     memberships,
+    bus,
     get issuedTokens() {
       return issuedTokens;
     },
@@ -173,6 +182,28 @@ describe('UsersService', () => {
       expect(inviteToken).toMatch(/^[0-9a-f]{64}$/);
       // Email is normalized at the boundary.
       expect([...h.users.values()].map((u) => u.email)).toEqual(['new@example.com']);
+    });
+
+    it('publishes UserInvited so the Notifications module can deliver it', async () => {
+      const h = makeHarness();
+
+      const { membership, inviteToken } = await h.service.invite('t-1', {
+        email: 'New@Example.com',
+        role: 'dispatcher',
+      });
+
+      expect(h.bus.types()).toEqual(['UserInvited']);
+      const event = h.bus.lastOfType('UserInvited');
+      expect(event).toMatchObject({
+        tenantId: 't-1',
+        aggregateType: 'membership',
+        aggregateId: membership.id,
+      });
+      expect(event?.payload).toMatchObject({
+        email: 'new@example.com',
+        role: 'dispatcher',
+        inviteToken,
+      });
     });
 
     it('rejects inviting an already-active member', async () => {

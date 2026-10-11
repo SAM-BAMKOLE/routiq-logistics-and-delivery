@@ -24,4 +24,10 @@ export const TENANT_CLS_KEY = 'tenant';
 /** Typed CLS store: everything the app stashes per request lives here. */
 export interface LdmsClsStore extends ClsStore {
   tenant?: TenantPrincipal;
+  /**
+   * The request's correlation id (the `x-request-id` header when supplied,
+   * otherwise the id pino assigned). Domain events stamp it into their
+   * envelope so one request can be traced through everything it caused.
+   */
+  requestId?: string;
 }

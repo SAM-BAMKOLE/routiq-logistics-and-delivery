@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { randomUUID } from 'node:crypto';
+import { resolveCorrelationId } from '../correlation-id.js';
 import { PROBLEM_TYPE_BASE, type ProblemDetails } from './problem-details.js';
 
 const DEFAULT_TITLES: Record<number, string> = {
@@ -150,12 +150,4 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ...(errors ? { errors } : {}),
     };
   }
-}
-
-function resolveCorrelationId(request: Request): string {
-  const header = request.headers['x-request-id'];
-  if (typeof header === 'string' && header.length > 0) {
-    return header;
-  }
-  return (request as Request & { id?: string }).id ?? randomUUID();
 }

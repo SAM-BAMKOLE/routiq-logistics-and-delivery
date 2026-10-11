@@ -33,6 +33,7 @@ import type {
   UserRepository,
 } from '../domain/user.repository.js';
 import type { TenantTransactionService } from '../../../shared/tenancy/tenant-transaction.service.js';
+import { FakeEventBus } from '../../../shared/messaging/testing/fake-event-bus.js';
 
 function userFixture(overrides: Partial<User & { password: string }> = {}): {
   user: User;
@@ -87,6 +88,7 @@ interface Harness {
   memberships: MembershipWithTenant[];
   refreshRows: RefreshToken[];
   oneTimeRows: OneTimeToken[];
+  bus: FakeEventBus;
 }
 
 function makeHarness(): Harness {
@@ -217,6 +219,14 @@ function makeHarness(): Harness {
         });
       }
     },
+    revokeAllForUser: async (userId) => {
+      for (const row of refreshRows.filter((r) => r.userId === userId)) {
+        refreshRows.splice(refreshRows.indexOf(row), 1, {
+          ...row,
+          revokedAt: new Date(),
+        });
+      }
+    },
   };
 
   const oneTimeStore: OneTimeTokenStore = {
@@ -278,6 +288,8 @@ function makeHarness(): Harness {
       key === 'JWT_REFRESH_TTL_DAYS' ? 30 : key === 'JWT_ACCESS_TTL' ? '15m' : undefined,
   } as ConfigService;
 
+  const bus = new FakeEventBus();
+
   const service = new AuthService(
     userRepository,
     membershipRepository,
@@ -285,11 +297,12 @@ function makeHarness(): Harness {
     oneTimeStore,
     passwords,
     issuer,
+    bus,
     transactions,
     config,
   );
 
-  return { service, users, memberships, refreshRows, oneTimeRows };
+  return { service, users, memberships, refreshRows, oneTimeRows, bus };
 }
 
 function seedUser(
@@ -471,6 +484,102 @@ describe('AuthService', () => {
         response: { code: 'REFRESH_TOKEN_REUSED' },
       });
       await expect(h.service.logout('bogus')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('forgot/reset password', () => {
+    it('stores a hashed reset token and publishes the raw one', async () => {
+      const h = makeHarness();
+      const { user } = seedUser(h);
+
+      await h.service.forgotPassword(user.email);
+
+      expect(h.oneTimeRows).toHaveLength(1);
+      expect(h.oneTimeRows[0].purpose).toBe('reset');
+      // Only the hash is stored: the raw token exists solely in the event.
+      expect(h.oneTimeRows[0].tokenHash).not.toContain('raw');
+      const event = h.bus.lastOfType('PasswordResetRequested');
+      expect(event).toBeDefined();
+      expect(event?.tenantId).toBeNull();
+      expect(event?.payload['email']).toBe(user.email);
+      expect(event?.payload['resetToken']).toEqual(
+        expect.any(String),
+      );
+      expect(h.oneTimeRows[0].tokenHash).toBe(
+        hashToken(event?.payload['resetToken'] as string),
+      );
+    });
+
+    it('answers the same for unknown addresses: event with no token', async () => {
+      const h = makeHarness();
+
+      await h.service.forgotPassword('ghost@example.com');
+
+      expect(h.oneTimeRows).toHaveLength(0);
+      const event = h.bus.lastOfType('PasswordResetRequested');
+      expect(event).toBeDefined();
+      expect(event?.payload['resetToken']).toBeNull();
+    });
+
+    it('applies the new password, consumes the token, revokes sessions', async () => {
+      const h = makeHarness();
+      const { user, password } = seedUser(h);
+      h.memberships.push(membershipFixture('t-1', user.id));
+      const session = await h.service.login({ email: user.email, password });
+
+      await h.service.forgotPassword(user.email);
+      const raw = h.bus.lastOfType('PasswordResetRequested')?.payload[
+        'resetToken'
+      ] as string;
+
+      await h.service.resetPassword(raw, 'brand-new-password-123');
+
+      expect(h.oneTimeRows[0].usedAt).not.toBeNull();
+      expect(h.users.get(user.id)?.passwordHash).toBe(
+        'ph:brand-new-password-123',
+      );
+      // The old session was revoked by the password change: presenting it
+      // counts as reuse and is rejected loudly.
+      await expect(h.service.refresh(session.refreshToken)).rejects.toMatchObject(
+        { response: { code: 'REFRESH_TOKEN_REUSED' } },
+      );
+      // And the new password works.
+      await expect(
+        h.service.login({ email: user.email, password: 'brand-new-password-123' }),
+      ).resolves.toMatchObject({ user: { id: user.id } });
+    });
+
+    it('rejects unknown, reused, and expired reset tokens distinctly', async () => {
+      const h = makeHarness();
+      const { user } = seedUser(h);
+
+      await expect(
+        h.service.resetPassword('bogus', 'whatever-123'),
+      ).rejects.toMatchObject({ response: { code: 'RESET_TOKEN_INVALID' } });
+
+      await h.service.forgotPassword(user.email);
+      const raw = h.bus.lastOfType('PasswordResetRequested')?.payload[
+        'resetToken'
+      ] as string;
+      await h.service.resetPassword(raw, 'first-password-123');
+
+      await expect(
+        h.service.resetPassword(raw, 'second-password-123'),
+      ).rejects.toMatchObject({ response: { code: 'RESET_TOKEN_EXPIRED' } });
+
+      // Expired-by-clock path.
+      h.oneTimeRows.push({
+        id: 'o-expired',
+        userId: user.id,
+        purpose: 'reset',
+        tokenHash: hashToken('late-token'),
+        expiresAt: new Date(Date.now() - 1000),
+        usedAt: null,
+        metadata: {},
+      });
+      await expect(
+        h.service.resetPassword('late-token', 'late-password-123'),
+      ).rejects.toMatchObject({ response: { code: 'RESET_TOKEN_EXPIRED' } });
     });
   });
 

@@ -20,6 +20,8 @@ import { USER_REPOSITORY } from '../domain/user.repository.js';
 import { hashToken, normalizeEmail } from './auth.service.js';
 import { INVITE_TTL } from './auth.service.js';
 import { randomBytes } from 'node:crypto';
+import { EVENT_BUS, type EventBus } from '../../../shared/messaging/event-bus.js';
+import { createEnvelope } from '../../../shared/messaging/event-envelope.js';
 
 export interface InviteInput {
   email: string;
@@ -50,6 +52,7 @@ export class UsersService {
     private readonly memberships: MembershipRepository,
     @Inject(ONE_TIME_TOKEN_STORE)
     private readonly oneTimeTokens: OneTimeTokenStore,
+    @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
   async listMembers(tenantId: string): Promise<TenantMember[]> {
@@ -78,8 +81,12 @@ export class UsersService {
   /**
    * Invites an email address into the tenant. New addresses get a user row
    * without a password; everyone gets an `invited` membership plus a
-   * single-use token. The raw token is returned so the caller can deliver it —
-   * interim until the Notifications module emails it (Step 7).
+   * single-use token.
+   *
+   * The `UserInvited` event is what delivers the token: the Notifications
+   * module mails it (invite-user template). The raw token is still
+   * returned to programmatic callers (integration tests), but the HTTP API
+   * no longer puts it in a response body.
    */
   async invite(
     tenantId: string,
@@ -120,6 +127,22 @@ export class UsersService {
       expiresAt: new Date(Date.now() + INVITE_TTL),
       metadata: { tenantId, role: membership.role },
     });
+
+    await this.events.publish(
+      createEnvelope({
+        type: 'UserInvited',
+        tenantId,
+        aggregateType: 'membership',
+        aggregateId: membership.id,
+        payload: {
+          email,
+          role: membership.role,
+          // Phase-1 in-process delivery; see the listener's note on why a
+          // reference replaces this once events flow through the outbox.
+          inviteToken: rawToken,
+        },
+      }),
+    );
 
     return { membership, inviteToken: rawToken };
   }

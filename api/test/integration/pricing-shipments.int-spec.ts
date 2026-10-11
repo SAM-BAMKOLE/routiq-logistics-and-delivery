@@ -19,6 +19,7 @@ import { ShipmentsService } from '../../src/modules/shipments/application/shipme
 import { TenantsModule } from '../../src/modules/tenants/tenants.module.js';
 import { TenantTransactionService } from '../../src/shared/tenancy/tenant-transaction.service.js';
 import { TenancyModule } from '../../src/shared/tenancy/tenancy.module.js';
+import { MessagingModule } from '../../src/shared/messaging/messaging.module.js';
 import {
   createOwnerDataSource,
   ensureSchema,
@@ -76,6 +77,7 @@ describe('Pricing and shipments (integration)', () => {
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, validate }),
         DatabaseModule,
         TenancyModule,
+        MessagingModule,
         IdentityModule,
         TenantsModule,
         CustomersModule,

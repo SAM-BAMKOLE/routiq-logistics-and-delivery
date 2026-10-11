@@ -82,13 +82,15 @@ export async function seedAuthFixture(): Promise<E2EAuthFixture> {
       [tenants[1].id, membershipRows[2].id, `DL-${tag.slice(0, 8)}`, vehicleRows[0].id],
     )) as Array<{ id: string }>;
 
-    // A portal customer in tenant B with a linked profile and two geocoded
-    // addresses, so quotes and shipment creation work without extra setup.
+    // A portal customer in tenant B with a linked profile, a notification
+    // address (shipment emails resolve recipients through it), and two
+    // geocoded addresses, so quotes and shipment creation work without
+    // extra setup.
     const customerRows = (await owner.query(
-      `INSERT INTO customers (tenant_id, user_id, name)
-       VALUES ($1, $2, 'Portal Customer')
+      `INSERT INTO customers (tenant_id, user_id, name, email)
+       VALUES ($1, $2, 'Portal Customer', $3)
        RETURNING id`,
-      [tenants[1].id, userRows[4].id],
+      [tenants[1].id, userRows[4].id, customerEmail],
     )) as Array<{ id: string }>;
     const addressRows = (await owner.query(
       `INSERT INTO addresses (tenant_id, customer_id, line1, city, country, location)

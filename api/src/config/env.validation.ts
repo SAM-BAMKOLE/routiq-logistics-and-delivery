@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance, Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -80,6 +81,57 @@ export class EnvironmentVariables {
   @Max(365)
   @IsOptional()
   JWT_REFRESH_TTL_DAYS: number = 30;
+
+  /**
+   * Email transport: `gmail` (Nodemailer over smtp.gmail.com),
+   * `console` (local development), or `memory` (tests). Defaults to
+   * `memory` under NODE_ENV=test and `console` otherwise, so omitting it
+   * never sends real mail by accident.
+   */
+  @IsIn(['gmail', 'console', 'memory'])
+  @IsOptional()
+  EMAIL_ADAPTER?: 'gmail' | 'console' | 'memory';
+
+  /**
+   * Gmail credentials, required only when EMAIL_ADAPTER=gmail (the adapter
+   * fails at boot without them). Use a Gmail App Password, never the
+   * account password.
+   */
+  @IsString()
+  @IsOptional()
+  SMTP_USER?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_PASSWORD?: string;
+
+  /**
+   * Daily email ceilings. A personal Gmail account allows roughly 500
+   * messages a day; the global limit keeps headroom below that, and the
+   * per-tenant share stops one tenant consuming the shared allowance.
+   * Critical messages ignore both.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  @IsOptional()
+  EMAIL_DAILY_GLOBAL_LIMIT: number = 450;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  @IsOptional()
+  EMAIL_DAILY_TENANT_LIMIT: number = 100;
+
+  /**
+   * Base URL used in emailed links (invitations, password resets). There
+   * is no frontend yet; this is where it will live.
+   */
+  @IsString()
+  @IsOptional()
+  APP_BASE_URL: string = 'http://localhost:5173';
 }
 
 export function validate(

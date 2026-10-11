@@ -172,7 +172,11 @@ export class Shipment {
     shipment.eventQueue.push({
       type: 'ShipmentCreated',
       occurredAt: now,
-      payload: { shipmentId: shipment.id, trackingNumber: shipment.trackingNumber },
+      payload: {
+        shipmentId: shipment.id,
+        trackingNumber: shipment.trackingNumber,
+        customerId: shipment.customerId,
+      },
     });
     return shipment;
   }
@@ -271,6 +275,9 @@ export class Shipment {
     this.transition('FAILED_ATTEMPT', {
       reason,
       extraEvents: ['ShipmentFailed'],
+      // Consumers (the failed-attempt email, dispatch) need the reason and
+      // the running count, not just the status change.
+      payload: { reason, failedAttempts: this.attempts },
     });
   }
 
@@ -319,6 +326,7 @@ export class Shipment {
     const payload = {
       shipmentId: this.id,
       trackingNumber: this.trackingNumber,
+      customerId: this.customerId,
       fromStatus: from,
       toStatus: to,
       ...options.payload,

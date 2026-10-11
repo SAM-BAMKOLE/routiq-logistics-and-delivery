@@ -9,6 +9,7 @@ import type { DriversService } from '../../drivers/application/drivers.service.j
 import type { VehiclesService } from '../../fleet/application/vehicles.service.js';
 import type { QuotesService } from '../../pricing/application/quotes.service.js';
 import type { TenantsService } from '../../tenants/application/tenants.service.js';
+import { FakeEventBus } from '../../../shared/messaging/testing/fake-event-bus.js';
 import { Shipment } from '../domain/shipment.js';
 import type {
   ShipmentHistoryEntry,
@@ -65,6 +66,7 @@ interface Harness {
   addresses: Map<string, Address>;
   settings: Record<string, unknown>;
   failInserts: number;
+  bus: FakeEventBus;
 }
 
 function makeHarness(options: { quotes?: QuotesService } = {}): Harness {
@@ -87,6 +89,7 @@ function makeHarness(options: { quotes?: QuotesService } = {}): Harness {
     addresses,
     settings: {},
     failInserts: 0,
+    bus: new FakeEventBus(),
   };
 
   const shipmentRepository: ShipmentRepository = {
@@ -192,6 +195,7 @@ function makeHarness(options: { quotes?: QuotesService } = {}): Harness {
     driversService,
     vehiclesService,
     tenantsService,
+    harness.bus,
   );
   return harness;
 }
@@ -239,6 +243,27 @@ describe('ShipmentsService', () => {
           actorId: 'u-1',
         }),
       ]);
+    });
+
+    it('publishes ShipmentCreated as a tenant-scoped envelope', async () => {
+      const h = makeHarness();
+      const shipment = await createShipment(h);
+
+      expect(h.bus.types()).toEqual(['ShipmentCreated']);
+      const event = h.bus.lastOfType('ShipmentCreated');
+      expect(event).toMatchObject({
+        tenantId: 't-1',
+        aggregateType: 'shipment',
+        aggregateId: shipment.id,
+        aggregateVersion: 1,
+        payload: {
+          shipmentId: shipment.id,
+          trackingNumber: shipment.trackingNumber,
+          customerId: 'c-1',
+        },
+      });
+      expect(event?.occurredAt).toEqual(expect.any(String));
+      expect(event?.id).toEqual(expect.any(String));
     });
 
     it('rejects an inverted delivery window', async () => {
@@ -371,6 +396,24 @@ describe('ShipmentsService', () => {
         fromStatus: 'CREATED',
         toStatus: 'CONFIRMED',
         actorId: 'u-2',
+      });
+
+      // Each raised event left as an envelope, stamped with the version it
+      // was raised at (1 for creation, 2 after the transition). The generic
+      // status event is queued before the specific one.
+      expect(h.bus.types()).toEqual([
+        'ShipmentCreated',
+        'ShipmentStatusChanged',
+        'ShipmentConfirmed',
+      ]);
+      expect(h.bus.published.map((event) => event.aggregateVersion)).toEqual([
+        1, 2, 2,
+      ]);
+      expect(h.bus.lastOfType('ShipmentStatusChanged')?.payload).toMatchObject({
+        fromStatus: 'CREATED',
+        toStatus: 'CONFIRMED',
+        customerId: 'c-1',
+        trackingNumber: shipment.trackingNumber,
       });
     });
 

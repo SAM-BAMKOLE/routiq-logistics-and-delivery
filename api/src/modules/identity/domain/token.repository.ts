@@ -4,8 +4,8 @@ export const REFRESH_TOKEN_STORE = Symbol('REFRESH_TOKEN_STORE');
 /** DI token for the {@link OneTimeTokenStore} port. */
 export const ONE_TIME_TOKEN_STORE = Symbol('ONE_TIME_TOKEN_STORE');
 
-/** Purposes for single-use tokens. Invite ships now; verify/reset follow with email. */
-export const TOKEN_PURPOSES = ['invite'] as const;
+/** Purposes for single-use tokens: invitations now, password reset alongside email. */
+export const TOKEN_PURPOSES = ['invite', 'reset'] as const;
 export type TokenPurpose = (typeof TOKEN_PURPOSES)[number];
 
 export interface RefreshToken {
@@ -55,9 +55,11 @@ export interface RefreshTokenStore {
   findByHash(tokenHash: string): Promise<RefreshToken | null>;
   revoke(id: string, replacedBy: string | null): Promise<void>;
   revokeFamily(familyId: string): Promise<void>;
+  /** Revokes every live session for a user — password changes use it. */
+  revokeAllForUser(userId: string): Promise<void>;
 }
 
-/** Outbound port for single-use tokens (invitations now, verify/reset later). */
+/** Outbound port for single-use tokens (invitations and password resets). */
 export interface OneTimeTokenStore {
   create(input: CreateOneTimeTokenInput): Promise<OneTimeToken>;
   findByHash(tokenHash: string): Promise<OneTimeToken | null>;

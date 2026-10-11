@@ -50,6 +50,16 @@ export class TypeOrmRefreshTokenStore implements RefreshTokenStore {
       .execute();
   }
 
+  async revokeAllForUser(userId: string): Promise<void> {
+    await this.repository()
+      .createQueryBuilder()
+      .update()
+      .set({ revokedAt: new Date() })
+      .where('user_id = :userId', { userId })
+      .andWhere('revoked_at IS NULL')
+      .execute();
+  }
+
   private repository(): Repository<RefreshTokenOrmEntity> {
     return this.txHost.tx.getRepository(RefreshTokenOrmEntity);
   }

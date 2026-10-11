@@ -12,6 +12,7 @@ import { CreateFleet1756000000008 } from './migrations/1756000000008-create-flee
 import { CreateDrivers1756000000009 } from './migrations/1756000000009-create-drivers.js';
 import { CreatePricing1756000000010 } from './migrations/1756000000010-create-pricing.js';
 import { CreateShipments1756000000011 } from './migrations/1756000000011-create-shipments.js';
+import { CreateEmailLog1756000000012 } from './migrations/1756000000012-create-email-log.js';
 
 /**
  * Migrations are listed explicitly rather than loaded from a filesystem glob.
@@ -31,6 +32,7 @@ export const migrations = [
   CreateDrivers1756000000009,
   CreatePricing1756000000010,
   CreateShipments1756000000011,
+  CreateEmailLog1756000000012,
 ];
 
 /**

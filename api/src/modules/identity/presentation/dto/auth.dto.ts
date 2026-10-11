@@ -69,3 +69,28 @@ export class AcceptInviteDto {
   @MaxLength(1024)
   password: string;
 }
+
+export class ForgotPasswordDto {
+  @ApiProperty({
+    example: 'dispatcher@acme.example',
+    description:
+      'Address to send a reset link to. The endpoint answers identically ' +
+      'whether or not an account exists, so it cannot enumerate accounts.',
+  })
+  @IsEmail()
+  @MaxLength(320)
+  email: string;
+}
+
+export class ResetPasswordDto {
+  @ApiProperty({ description: 'Single-use password reset token.' })
+  @IsString()
+  @MinLength(1)
+  token: string;
+
+  @ApiProperty({ minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(1024)
+  password: string;
+}

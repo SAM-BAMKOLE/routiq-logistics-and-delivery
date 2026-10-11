@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
+import { InMemoryEmailAdapter } from '../src/modules/notifications/infrastructure/in-memory-email.adapter.js';
 import { seedAuthFixture, type E2EAuthFixture } from './e2e/seed.js';
 
 interface Session {
@@ -195,14 +196,20 @@ describe('Fleet and drivers API (e2e)', () => {
       expect(target).toBeUndefined();
 
       const email = `wheeler-${randomUUID()}@example.com`;
-      const invited = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post('/api/v1/users/invitations')
         .set(auth(admin.accessToken))
         .send({ email, role: 'driver' })
         .expect(201);
+      // The invite token arrives by email, not in the response body.
+      const inviteMessage = app.get(InMemoryEmailAdapter).lastTo(email);
+      const inviteToken = /token=([0-9a-f]{64})/.exec(
+        `${inviteMessage?.text ?? ''}\n${inviteMessage?.html ?? ''}`,
+      )?.[1];
+      expect(inviteToken).toEqual(expect.any(String));
       await request(app.getHttpServer())
         .post('/api/v1/auth/accept-invite')
-        .send({ token: invited.body.inviteToken, password: 'Wheeler-123' })
+        .send({ token: inviteToken, password: 'Wheeler-123' })
         .expect(201);
 
       const refreshed = await request(app.getHttpServer())

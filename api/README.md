@@ -153,10 +153,17 @@ credentials, and tokens:
 - `POST /auth/switch-tenant` re-scopes a session to another membership of the
   same user, rotating the refresh token as well.
 - Invitations are single-use hashed tokens (`POST /users/invitations` →
-  `POST /auth/accept-invite`, which sets the password and auto-logs-in). The
-  invite token is returned in the response until the Notifications module can
-  email it. Email verification and password reset follow the same token shape
-  and land with email delivery.
+  `POST /auth/accept-invite`, which sets the password and auto-logs-in).
+  The raw token is no longer returned in an HTTP response: the invite
+  travels as a branded email through the Notifications module, and the
+  e2e suites read it out of the in-memory mailbox. Acceptance marks the
+  address verified, so no separate verification flow exists yet.
+- Password recovery: `POST /auth/forgot-password` always answers 202 with
+  the same body (no account enumeration); known addresses get a
+  one-hour, single-use link. `POST /auth/reset-password` consumes it,
+  applies the new password, and revokes every existing session. Bad or
+  reused tokens are 401s with distinct codes (`RESET_TOKEN_INVALID`,
+  `RESET_TOKEN_EXPIRED`).
 - Roles (`tenant_admin`, `dispatcher`, `driver`, `customer`) map to
   permissions in code; routes declare needs with `@RequirePermissions(...)`
   (any listed permission satisfies the guard), enforced by
@@ -220,6 +227,43 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
   `ON DELETE RESTRICT`, and drivers cannot touch unassigned shipments yet
   (`SHIPMENT_NOT_ASSIGNED` until dispatch in Step 8).
 
+## Notifications and events
+
+- `shared/messaging/`: an in-process event bus. Services publish
+  `DomainEventEnvelope`s (id, type, tenant, aggregate + version,
+  correlation/causation ids, payload); the `EventEmitterBus` adapter fills
+  the correlation id from the request's `x-request-id` (or generates one)
+  and delivers through `@nestjs/event-emitter`. Listener failures are
+  logged, never surfaced to the raising request — phase 1 is best-effort
+  by design; phase 2 moves delivery to an outbox plus a queue.
+- Events are published inside the tenant transaction, so listeners see
+  the same RLS context as the writer. The email send therefore runs
+  inside the request in phase 1 (documented tradeoff: SMTP latency lands
+  on the mutating call; the quotas keep the worst case bounded).
+- `NotificationsModule` (`src/modules/notifications/`) has no HTTP
+  surface: listeners map domain events onto Handlebars templates
+  (`<name>.subject.hbs` / `.html.hbs` / `.txt.hbs` wrapped in one shared
+  layout, copied into `dist` by the build) and record every attempt in
+  `email_log`.
+- Each send carries a unique `dedupe_key`
+  (`<eventId>:<template>:<recipient>`), so an at-least-once replay mails
+  exactly once. Daily quotas (global default 450, per-tenant default
+  100) drop `normal`-priority mail with a recorded `skipped_quota` row;
+  `critical` mail (invites, resets, delivery outcomes) ignores the
+  quota.
+- Transports sit behind `EmailPort`, chosen by `EMAIL_ADAPTER`:
+  `console` (default), `memory` (tests — an in-process mailbox every
+  suite can read), and `gmail` (nodemailer SMTP pool; the app refuses to
+  boot without `SMTP_USER`/`SMTP_PASSWORD`). `email_log` is a global
+  table with a nullable tenant, following the `refresh_tokens`
+  precedent: password reset runs with no tenant at all.
+- Template map: shipment confirmed → confirmation; status changes to
+  `ASSIGNED`/`OUT_FOR_DELIVERY` → driver-assigned / out-for-delivery;
+  delivered → receipt (critical); failed attempt → reason-carrying
+  failure (critical). `UserInvited` and `PasswordResetRequested` become
+  invite and reset emails (critical); customers without an email address
+  are skipped with a debug log.
+
 ## Configuration
 
 Every environment variable is validated at boot with a schema in
@@ -242,7 +286,9 @@ src/
   modules/drivers/        # driver profiles, shifts, availability
   modules/pricing/        # tenant rate cards and the quote engine
   modules/shipments/      # aggregate, state machine, history, tracking
+  modules/notifications/  # listeners, templates, email adapters, email log
   shared/tenancy/         # CLS context, transaction interceptor, tenancy module
+  shared/messaging/       # event envelope, bus port, EventEmitter adapter
   app.module.ts           # root module
   app.setup.ts            # shared HTTP pipeline (prefix, pipes, CORS, Swagger)
   main.ts                 # HTTP entrypoint

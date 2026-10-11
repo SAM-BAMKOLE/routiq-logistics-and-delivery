@@ -4,7 +4,9 @@ import {
   type ExecutionContext,
   type NestInterceptor,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { from, lastValueFrom, type Observable } from 'rxjs';
+import { resolveCorrelationId } from '../../common/correlation-id.js';
 import { TenantContextService } from './tenant-context.service.js';
 import { TenantTransactionService } from './tenant-transaction.service.js';
 
@@ -22,7 +24,18 @@ export class TenantTransactionInterceptor implements NestInterceptor {
     private readonly transactions: TenantTransactionService,
   ) {}
 
-  intercept(_context: ExecutionContext, next: CallHandler): Observable<unknown> {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    // Health probes and other routes excluded from the CLS middleware run
+    // with no context at all: nothing to correlate, nothing to open.
+    if (!this.context.isActive()) {
+      return next.handle();
+    }
+
+    // Captured before the tenant check: global events (password reset) carry
+    // a correlation id too, even though no transaction opens for them.
+    const request = context.switchToHttp().getRequest<Request>();
+    this.context.setRequestId(resolveCorrelationId(request));
+
     if (!this.context.get()) {
       return next.handle();
     }

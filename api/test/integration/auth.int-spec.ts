@@ -15,6 +15,7 @@ import { Argon2PasswordHasher } from '../../src/modules/identity/infrastructure/
 import { TenantContextService } from '../../src/shared/tenancy/tenant-context.service.js';
 import { TenantTransactionService } from '../../src/shared/tenancy/tenant-transaction.service.js';
 import { TenancyModule } from '../../src/shared/tenancy/tenancy.module.js';
+import { MessagingModule } from '../../src/shared/messaging/messaging.module.js';
 import {
   createOwnerDataSource,
   ensureSchema,
@@ -78,6 +79,7 @@ describe('Identity authentication (integration)', () => {
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, validate }),
         DatabaseModule,
         TenancyModule,
+        MessagingModule,
         IdentityModule,
       ],
     }).compile();

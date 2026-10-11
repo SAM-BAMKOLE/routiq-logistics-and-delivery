@@ -24,7 +24,12 @@ import {
  * entry is a deliberate exception to the isolation rule, reviewed here rather
  * than scattered through migrations.
  */
-const GLOBAL_TABLES_WITH_TENANT_REF = ['refresh_tokens'];
+// Deliberate exceptions: tables that carry a tenant reference but stay
+// global. `refresh_tokens` because platform sessions carry no tenant;
+// `email_log` because a password reset is logged before any tenant context
+// exists. Both have no cross-tenant read API — rows are bound by the
+// application layer (user, dedupe key).
+const GLOBAL_TABLES_WITH_TENANT_REF = ['refresh_tokens', 'email_log'];
 describe('Tenant isolation across the schema (integration)', () => {
   let owner: DataSource;
   let app: DataSource;
@@ -61,9 +66,8 @@ describe('Tenant isolation across the schema (integration)', () => {
 
     for (const { table_name } of tenantTables) {
       if (GLOBAL_TABLES_WITH_TENANT_REF.includes(table_name)) {
-        // Deliberately global: platform sessions carry no tenant, so their
-        // refresh rows must stay readable without one. Rows are bound to
-        // their user in the application layer instead.
+        // Deliberately global — see the constant's comment. Rows are bound
+        // to their owning user or dedupe key in the application layer.
         const [flags] = (await owner.query(
           `SELECT relrowsecurity AS rls FROM pg_class WHERE relname = $1`,
           [table_name],

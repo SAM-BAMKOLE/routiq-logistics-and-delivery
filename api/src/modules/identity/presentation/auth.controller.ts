@@ -1,5 +1,6 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
+  ApiAcceptedResponse,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
@@ -8,9 +9,11 @@ import {
 import { AuthService } from '../application/auth.service.js';
 import {
   AcceptInviteDto,
+  ForgotPasswordDto,
   LoginDto,
   LogoutDto,
   RefreshDto,
+  ResetPasswordDto,
   SwitchTenantDto,
 } from './dto/auth.dto.js';
 import { AuthResponseDto } from './dto/auth-response.dto.js';
@@ -74,5 +77,35 @@ export class AuthController {
     return AuthResponseDto.from(
       await this.auth.acceptInvite(dto.token, dto.password),
     );
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Request a password reset link by email',
+    description:
+      'Always answers 202 with the same body, whether or not the address ' +
+      'is known. Known addresses get a single-use token mailed to them ' +
+      'through the Notifications module (reset-password template).',
+  })
+  @ApiAcceptedResponse({ description: 'Accepted; check the inbox (or the log).' })
+  async forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<{ status: 'accepted' }> {
+    await this.auth.forgotPassword(dto.email);
+    return { status: 'accepted' };
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Consume a reset link and set a new password',
+    description:
+      'Single-use token in, new password stored, every existing session ' +
+      'revoked. Links expire after one hour.',
+  })
+  @ApiOkResponse({ description: 'Password updated; sign in again.' })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    await this.auth.resetPassword(dto.token, dto.password);
   }
 }

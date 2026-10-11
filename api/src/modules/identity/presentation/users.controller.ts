@@ -43,17 +43,20 @@ export class UsersController {
   @ApiOperation({
     summary: 'Invite an email address into the active tenant',
     description:
-      'The single-use invite token is returned so the caller can deliver it. ' +
-      'This is interim until the Notifications module emails invitations.',
+      'Mints a single-use invite token and emails it to the invitee through ' +
+      'the Notifications module (invite-user template). The token itself is ' +
+      'delivered by email only — it never appears in the response.',
   })
-  @ApiCreatedResponse({ description: 'Membership plus the invite token.' })
+  @ApiCreatedResponse({
+    description: 'Membership created or re-queued; the invitation is in the inbox.',
+  })
   async invite(
     @Body() dto: InviteUserDto,
-  ): Promise<{ membershipId: string; inviteToken: string }> {
-    const { membership, inviteToken } = await this.users.invite(
+  ): Promise<{ membershipId: string }> {
+    const { membership } = await this.users.invite(
       this.context.requireTenantId(),
       { email: dto.email, role: dto.role, name: dto.name },
     );
-    return { membershipId: membership.id, inviteToken };
+    return { membershipId: membership.id };
   }
 }

@@ -14,6 +14,7 @@ import { FleetModule } from '../../src/modules/fleet/fleet.module.js';
 import { IdentityModule } from '../../src/modules/identity/identity.module.js';
 import { TenantTransactionService } from '../../src/shared/tenancy/tenant-transaction.service.js';
 import { TenancyModule } from '../../src/shared/tenancy/tenancy.module.js';
+import { MessagingModule } from '../../src/shared/messaging/messaging.module.js';
 import {
   createOwnerDataSource,
   ensureSchema,
@@ -67,6 +68,7 @@ describe('Operations modules (integration)', () => {
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, validate }),
         DatabaseModule,
         TenancyModule,
+        MessagingModule,
         IdentityModule,
         CustomersModule,
         FleetModule,

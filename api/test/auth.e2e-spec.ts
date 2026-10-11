@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
+import { InMemoryEmailAdapter } from '../src/modules/notifications/infrastructure/in-memory-email.adapter.js';
 import { seedAuthFixture, type E2EAuthFixture } from './e2e/seed.js';
 
 /**
@@ -48,6 +49,22 @@ describe('Identity authentication and RBAC (e2e)', () => {
       .post('/api/v1/auth/login')
       .send(tenantId ? { email, password, tenantId } : { email, password })
       .expect(expectedStatus);
+  }
+
+  /**
+   * Reads the raw invite token out of the in-memory mailbox: invitations
+   * are delivered by email now, never in an HTTP response.
+   */
+  function inviteTokenFromMailbox(recipient: string): string {
+    const message = app.get(InMemoryEmailAdapter).lastTo(recipient);
+    if (!message) {
+      throw new Error(`No invitation email was delivered to ${recipient}.`);
+    }
+    const match = /token=([0-9a-f]{64})/.exec(`${message.text}\n${message.html}`);
+    if (!match) {
+      throw new Error(`The invitation email to ${recipient} carries no token.`);
+    }
+    return match[1];
   }
 
   describe('login', () => {
@@ -168,11 +185,16 @@ describe('Identity authentication and RBAC (e2e)', () => {
         .expect(201);
 
       expect(invited.body.membershipId).toEqual(expect.any(String));
-      expect(invited.body.inviteToken).toMatch(/^[0-9a-f]{64}$/);
+      // The token is delivered by email only — never in the response body.
+      expect(invited.body.inviteToken).toBeUndefined();
+
+      const inviteToken = inviteTokenFromMailbox(email);
+      const message = app.get(InMemoryEmailAdapter).lastTo(email);
+      expect(message?.subject).toContain('invited');
 
       await request(app.getHttpServer())
         .post('/api/v1/auth/accept-invite')
-        .send({ token: invited.body.inviteToken, password: 'New-member-123' })
+        .send({ token: inviteToken, password: 'New-member-123' })
         .expect(201);
 
       const member = await login(email, 'New-member-123');
@@ -234,10 +256,11 @@ describe('Identity authentication and RBAC (e2e)', () => {
         .set('Authorization', `Bearer ${admin.body.accessToken}`)
         .send({ email: secondEmail, role: 'tenant_admin' })
         .expect(201);
+      expect(invited.body.inviteToken).toBeUndefined();
 
       await request(app.getHttpServer())
         .post('/api/v1/auth/accept-invite')
-        .send({ token: invited.body.inviteToken, password: 'Second-admin-123' })
+        .send({ token: inviteTokenFromMailbox(secondEmail), password: 'Second-admin-123' })
         .expect(201);
 
       const second = await login(secondEmail, 'Second-admin-123');

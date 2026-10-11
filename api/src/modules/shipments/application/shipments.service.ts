@@ -15,6 +15,8 @@ import { DriversService } from '../../drivers/application/drivers.service.js';
 import { VehiclesService } from '../../fleet/application/vehicles.service.js';
 import { QuotesService } from '../../pricing/application/quotes.service.js';
 import { TenantsService } from '../../tenants/application/tenants.service.js';
+import { EVENT_BUS, type EventBus } from '../../../shared/messaging/event-bus.js';
+import { createEnvelope } from '../../../shared/messaging/event-envelope.js';
 import { Shipment, ShipmentDomainError } from '../domain/shipment.js';
 import { shipmentPolicyFrom } from '../domain/shipment-policy.js';
 import {
@@ -70,6 +72,7 @@ export class ShipmentsService {
     private readonly drivers: DriversService,
     private readonly vehicles: VehiclesService,
     private readonly tenants: TenantsService,
+    @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
   async create(
@@ -141,7 +144,7 @@ export class ShipmentsService {
     );
 
     await this.persistHistory(shipment, actor.userId);
-    this.publishEvents(shipment);
+    await this.publishEvents(shipment);
     return shipment;
   }
 
@@ -305,7 +308,7 @@ export class ShipmentsService {
 
     await this.shipments.save(shipment);
     await this.persistHistory(shipment, actor.userId);
-    this.publishEvents(shipment);
+    await this.publishEvents(shipment);
     return shipment;
   }
 
@@ -385,21 +388,33 @@ export class ShipmentsService {
   }
 
   /**
-   * Drains the aggregate's domain events. No consumer exists until the
-   * notifications/outbox steps; they are logged now and published for real
-   * later, without changing the aggregate.
+   * Drains the aggregate's domain events into the event bus as envelopes.
+   * Runs inside the request's tenant transaction, so listeners share the
+   * RLS context and see exactly the rows this request sees; delivery is
+   * best-effort (a listener failure never fails the request).
    */
-  private publishEvents(shipment: Shipment): void {
+  private async publishEvents(shipment: Shipment): Promise<void> {
     const events = shipment.pullDomainEvents();
-    if (events.length > 0) {
-      this.logger.debug(
-        {
-          shipmentId: shipment.id,
-          events: events.map((event) => event.type),
-        },
-        'shipment domain events raised',
-      );
+    if (events.length === 0) {
+      return;
     }
+    await this.events.publishAll(
+      events.map((event) =>
+        createEnvelope({
+          type: event.type,
+          tenantId: shipment.tenantId,
+          aggregateType: 'shipment',
+          aggregateId: shipment.id,
+          aggregateVersion: shipment.version,
+          occurredAt: event.occurredAt,
+          payload: event.payload,
+        }),
+      ),
+    );
+    this.logger.debug(
+      { shipmentId: shipment.id, events: events.map((event) => event.type) },
+      'shipment domain events published',
+    );
   }
 
   private async insertWithTrackingRetry(

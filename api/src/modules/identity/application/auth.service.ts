@@ -30,6 +30,8 @@ import type { User } from '../domain/user.js';
 import type { UserRepository } from '../domain/user.repository.js';
 import { USER_REPOSITORY } from '../domain/user.repository.js';
 import { TenantTransactionService } from '../../../shared/tenancy/tenant-transaction.service.js';
+import { EVENT_BUS, type EventBus } from '../../../shared/messaging/event-bus.js';
+import { createEnvelope } from '../../../shared/messaging/event-envelope.js';
 
 export interface LoginInput {
   email: string;
@@ -66,6 +68,9 @@ export interface ActiveTenant {
 /** Invitation lifetime: 7 days. */
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Password-reset token lifetime: 1 hour — long enough to read the mail, short enough to stay useful. */
+const RESET_TTL_MS = 60 * 60 * 1000;
+
 /**
  * Application service for authentication: login, refresh rotation, logout,
  * tenant switching, and invitation acceptance. It owns the credential and
@@ -95,6 +100,7 @@ export class AuthService {
     @Inject(PASSWORD_HASHER) private readonly passwords: PasswordHasher,
     @Inject(ACCESS_TOKEN_ISSUER)
     private readonly accessTokens: AccessTokenIssuer,
+    @Inject(EVENT_BUS) private readonly events: EventBus,
     private readonly transactions: TenantTransactionService,
     private readonly config: ConfigService,
   ) {}
@@ -172,6 +178,66 @@ export class AuthService {
     if (row && !row.revokedAt) {
       await this.refreshTokens.revoke(row.id, null);
     }
+  }
+
+  /**
+   * Starts a password reset. The response and the published event are
+   * identical for known and unknown addresses — the listener stops when
+   * the event carries no token — so this endpoint cannot be used to
+   * enumerate accounts, and the reset mail is the only signal that the
+   * address exists.
+   */
+  async forgotPassword(emailInput: string): Promise<void> {
+    const email = normalizeEmail(emailInput);
+    const user = await this.users.findByEmail(email);
+
+    let rawToken: string | null = null;
+    if (user && user.status === 'active') {
+      rawToken = randomBytes(32).toString('hex');
+      await this.oneTimeTokens.create({
+        userId: user.id,
+        purpose: 'reset',
+        tokenHash: hashToken(rawToken),
+        expiresAt: new Date(Date.now() + RESET_TTL_MS),
+        metadata: {},
+      });
+    }
+
+    await this.events.publish(
+      createEnvelope({
+        type: 'PasswordResetRequested',
+        tenantId: null,
+        aggregateType: 'user',
+        // No row for an unknown address; the event still fires so the
+        // caller sees the same behavior either way.
+        aggregateId: user?.id ?? email,
+        payload: { email, resetToken: rawToken },
+      }),
+    );
+  }
+
+  /**
+   * Consumes a reset link: single-use token in, new password stored,
+   * every existing session revoked. The password change signs out any
+   * session the requester was not already holding.
+   */
+  async resetPassword(token: string, password: string): Promise<void> {
+    const row = await this.oneTimeTokens.findByHash(hashToken(token));
+    if (!row || row.purpose !== 'reset') {
+      throw invalidResetToken();
+    }
+    if (row.usedAt || row.expiresAt.getTime() <= Date.now()) {
+      throw expiredResetToken();
+    }
+
+    const user = await this.users.findById(row.userId);
+    if (!user || user.status !== 'active') {
+      throw invalidResetToken();
+    }
+
+    await this.users.setPassword(user.id, await this.passwords.hash(password));
+    await this.oneTimeTokens.markUsed(row.id);
+    await this.refreshTokens.revokeAllForUser(user.id);
   }
 
   async acceptInvite(token: string, password: string): Promise<AuthResult> {
@@ -405,6 +471,20 @@ function expiredInvitation(): UnauthorizedException {
   return new UnauthorizedException({
     message: 'The invitation has expired or was already used.',
     code: 'INVITATION_EXPIRED',
+  });
+}
+
+function invalidResetToken(): UnauthorizedException {
+  return new UnauthorizedException({
+    message: 'The password reset link is invalid.',
+    code: 'RESET_TOKEN_INVALID',
+  });
+}
+
+function expiredResetToken(): UnauthorizedException {
+  return new UnauthorizedException({
+    message: 'The password reset link has expired or was already used.',
+    code: 'RESET_TOKEN_EXPIRED',
   });
 }
 

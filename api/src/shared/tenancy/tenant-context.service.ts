@@ -28,6 +28,20 @@ export class TenantContextService {
     return this.cls.get(TENANT_CLS_KEY);
   }
 
+  /**
+   * Whether a CLS context is active. Routes excluded from the CLS middleware
+   * (health probes, metrics) run without one, and touching the store there
+   * throws.
+   */
+  isActive(): boolean {
+    return this.cls.isActive();
+  }
+
+  /** Records the request's correlation id for domain events to pick up. */
+  setRequestId(requestId: string): void {
+    this.cls.set('requestId', requestId);
+  }
+
   getTenantId(): string | undefined {
     return this.get()?.tenantId;
   }
