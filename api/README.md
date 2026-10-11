@@ -65,6 +65,7 @@ Once running:
 | `pnpm db:migrate` | Apply pending migrations |
 | `pnpm db:migrate:show` | List applied and pending migrations |
 | `pnpm db:migrate:revert` | Roll back the last migration |
+| `pnpm bench:routing` | Routing strategies on deterministic synthetic instances |
 
 ## Database
 
@@ -282,6 +283,104 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
   `AssignmentExpired`, and `AssignmentCancelled`, all published inside
   the tenant transaction. No phase-1 consumer needs them — customers
   already learn about `ASSIGNED` through `ShipmentStatusChanged`.
+
+## Routing
+
+- `RoutingModule` (`src/modules/routing/`): turn a day's confirmed
+  shipments into drivable tours — `route_plans` (the run), `routes` (one
+  tour, one vehicle), and `route_stops` (a shipment's planned visit),
+  all under tenant-forced RLS like the rest of the schema. A unique index
+  on `route_stops.shipment_id` makes "planned exactly once" a schema
+  invariant, not a service convention.
+- Planning is asynchronous over HTTP: `POST /routes/plan` validates the
+  day (depot configured → date parses → strategy known → shipments exist
+  → within `maxStops` → an active vehicle exists), records the run, and
+  answers `202 Accepted` with a `Location` status URL; the caller polls
+  `GET /routes/plans/:id` until `planned` (or `failed`, which carries the
+  error). Phase 1 executes the plan as a floating in-process task with
+  its own tenant transaction — the documented deviation from the
+  architecture's Piscina/BullMQ worker, swapped in phase 2 without an
+  API change (the 202 + status URL is already the queue's shape).
+- Plan input: unrouted `CONFIRMED` shipments whose delivery window
+  touches the plan date, active vehicles with their best-fit driver
+  (the driver's `current_vehicle_id`), a shift from any `driver_shifts`
+  row overlapping the day, else the depot's hours. Shipments without
+  geocoded addresses are reported `no_coordinates` before solving; the
+  tenant's depot lives in `settings.routing.depot` (latitude/longitude —
+  the one setting with no default: a problem with no start point is not
+  a problem, so a missing depot is 422 `ROUTING_DEPOT_MISSING`).
+- The optimizer (`optimization/`) is pure TypeScript, seeded
+  (mulberry32) and iteration-bounded, so the same seed replays the same
+  plan — `timeBudgetMs` is only a safety cap. Four strategies behind one
+  `getStrategy` registry: `nearest_neighbor` (fast greedy baseline),
+  `savings` (Clarke–Wright), `savings_local_search` (savings + 2-opt /
+  Or-opt / relocate / swap), and `annealing` (the tenant default).
+  Distances are Haversine × a circuity factor (1.3) at an average speed
+  (30 km/h) — phase-1 straight-line geometry, noted as such.
+- Feasibility is hard, not soft: capacity (weight and volume), delivery
+  windows (early arrival waits), and shift/depot closing. One tour per
+  vehicle — classic CVRPTW, no multi-tripping — and after merging,
+  Clarke–Wright's surplus routes are salvaged into the drafted tours by
+  cheapest feasible insertion; whatever still fits nowhere comes back
+  with a reason (`no_coordinates`, `capacity_exceeded`,
+  `time_window_infeasible`, `shift_exceeded`, `no_feasible_vehicle`) in
+  `plan.unassigned`.
+- Reads and lifecycle: `GET /routes` (filter by `planDate`/`status`/
+  `driverId`), `GET /routes/:id` (ETag carries the version),
+  `POST /routes/:id/start` (`planned` → `active`) and
+  `POST /routes/:id/replan` (re-solves the remaining stops in place on
+  the same vehicle, swapping `route_stops` inside one transaction) —
+  both behind `If-Match` like shipments: 428 without it, 412 on a stale
+  version, 409 `ROUTE_NOT_STARTABLE` / `ROUTE_NOT_REPLANABLE` when the
+  status says no.
+- Permissions split as `routes:manage` (dispatchers and admins: plan,
+  start, replan, read any route) versus `routes:read-own` (drivers: read
+  routes, scoped in the service to their own driver profile — someone
+  else's route answers 404, never 403; customers have neither and get
+  403 at the guard).
+- Events: `RoutePlanned` and `RouteReplanned` (with counts and the
+  objective) published inside the tenant transaction, carrying
+  `aggregateType: 'route'` for Step 10's tracking work to build on.
+- Tradeoffs, phase 1: the in-process executor ties plan latency to the
+  API process (fine for one tenant planning a day; the queue fixes it at
+  phase 2); the unique stop index means cancelling a route does not yet
+  free its shipments for replanning elsewhere (phase 2, alongside route
+  cancellation); and windowless long-haul pairs need a depot, hours, and
+  speed in tenant settings that actually fit the day.
+- Benchmark: `pnpm bench:routing` runs all four strategies on
+  deterministic synthetic instances generated in-process (no downloads)
+  in the spirit of the public families they imitate — clustered
+  (C101-like), random (R101-like), mixed (RC101-like), and a windowless
+  200-stop CVRP — with city-scale coordinates around a Lagos-centred
+  depot. Representative run:
+
+  | instance | strategy | ms | routes | unassigned | km | objective |
+  | --- | --- | ---: | ---: | ---: | ---: | ---: |
+  | C101-like | nearest_neighbor | 13.2 | 10 | 18 | 211.1 | 4,311,063 |
+  | C101-like | savings | 27.2 | 10 | 2 | 191.6 | 1,091,589 |
+  | C101-like | savings_local_search | 32.7 | 10 | 2 | 187.0 | 1,086,962 |
+  | C101-like | annealing | 56.3 | 10 | 2 | 182.6 | 1,082,634 |
+  | R101-like | nearest_neighbor | 11.8 | 10 | 21 | 287.7 | 4,987,680 |
+  | R101-like | savings | 15.4 | 10 | 5 | 305.8 | 1,805,783 |
+  | R101-like | savings_local_search | 30.5 | 10 | 5 | 303.0 | 1,803,018 |
+  | R101-like | annealing | 50.3 | 10 | 5 | 277.9 | 1,777,853 |
+  | RC101-like | nearest_neighbor | 1.5 | 10 | 33 | 229.6 | 7,329,572 |
+  | RC101-like | savings | 16.5 | 10 | 3 | 342.9 | 1,442,909 |
+  | RC101-like | savings_local_search | 23.2 | 10 | 3 | 334.5 | 1,434,527 |
+  | RC101-like | annealing | 38.2 | 10 | 3 | 334.5 | 1,434,527 |
+  | CVRP-200 | nearest_neighbor | 4.7 | 10 | 16 | 517.8 | 4,217,781 |
+  | CVRP-200 | savings | 54.4 | 10 | 15 | 469.2 | 3,969,235 |
+  | CVRP-200 | savings_local_search | 72.0 | 10 | 15 | 468.1 | 3,968,148 |
+  | CVRP-200 | annealing | 85.2 | 10 | 15 | 468.1 | 3,968,148 |
+
+  How to read it: the objective (distance ×1, vehicles ×50,000, lateness
+  ×100, unassigned ×200,000) is the comparable column, not kilometres —
+  strategies that plan more stops necessarily drive farther. Nearest
+  neighbour is fastest but strands a quarter of the day; the savings
+  family plans nearly everything the hard windows and the ten-vehicle
+  fleet allow, and local search or annealing buys a few more per cent of
+  distance on top. Every run stays two orders of magnitude under the
+  default 2-second budget.
 
 ## Notifications and events
 

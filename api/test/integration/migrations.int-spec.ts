@@ -71,6 +71,7 @@ describe('Database migrations (integration)', () => {
       'CreateShipments1756000000011',
       'CreateEmailLog1756000000012',
       'CreateDispatch1756000000013',
+      'CreateRoutes1756000000014',
     ]);
   });
 

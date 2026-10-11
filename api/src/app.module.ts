@@ -15,6 +15,7 @@ import { IdentityModule } from './modules/identity/identity.module.js';
 import { PricingModule } from './modules/pricing/pricing.module.js';
 import { ShipmentsModule } from './modules/shipments/shipments.module.js';
 import { DispatchModule } from './modules/dispatch/dispatch.module.js';
+import { RoutingModule } from './modules/routing/routing.module.js';
 import { TenantsModule } from './modules/tenants/tenants.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { MessagingModule } from './shared/messaging/messaging.module.js';
@@ -72,6 +73,7 @@ import { validate } from './config/env.validation.js';
     PricingModule,
     ShipmentsModule,
     DispatchModule,
+    RoutingModule,
     NotificationsModule,
   ],
   controllers: [AppController],

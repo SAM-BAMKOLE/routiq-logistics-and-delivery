@@ -27,7 +27,8 @@
     "db:migrate": "tsx ./node_modules/typeorm/cli.js migration:run -d ./src/database/data-source.ts",
     "db:migrate:revert": "tsx ./node_modules/typeorm/cli.js migration:revert -d ./src/database/data-source.ts",
     "db:migrate:show": "tsx ./node_modules/typeorm/cli.js migration:show -d ./src/database/data-source.ts",
-    "db:seed:platform-admin": "tsx ./scripts/create-platform-admin.ts"
+    "db:seed:platform-admin": "tsx ./scripts/create-platform-admin.ts",
+    "bench:routing": "tsx ./scripts/benchmark-routing.ts"
   },
   "dependencies": {
     "@nestjs-cls/transactional": "^4.0.1",

@@ -41,7 +41,7 @@ import {
   ShipmentListResponseDto,
   ShipmentResponseDto,
 } from './dto/shipments-response.dto.js';
-import { parseIfMatch } from './version-precondition.js';
+import { parseIfMatch } from '../../../shared/http/parse-if-match.js';
 
 /**
  * Shipment actions, one endpoint per state-machine transition. Read routes
