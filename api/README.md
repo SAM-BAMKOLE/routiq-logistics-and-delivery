@@ -224,8 +224,64 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
   response `ETag`: missing is 428 `PRECONDITION_REQUIRED`, stale is 412
   `VERSION_MISMATCH`. Shipments are quoted synchronously at creation
   (`price_minor` is never null), addresses and customers are
-  `ON DELETE RESTRICT`, and drivers cannot touch unassigned shipments yet
-  (`SHIPMENT_NOT_ASSIGNED` until dispatch in Step 8).
+  `ON DELETE RESTRICT`, and the row records its current driver and
+  vehicle (`assign` sets them, `release` clears them): a driver may read
+  and act on exactly the shipments assigned to them
+  (`SHIPMENT_NOT_ASSIGNED` otherwise).
+
+## Dispatch
+
+- `DispatchModule` (`src/modules/dispatch/`): ranked candidate search and
+  the offer lifecycle, living in `dispatch_assignments`. The shipment row
+  records who is driving (see Shipments above) so driver-scoped reads
+  never need this module; the table records the negotiation that put them
+  there.
+- Candidate search (`GET /shipments/:id/dispatch-candidates`, dispatchers
+  only): one PostGIS round trip keeps active, available drivers with no
+  live assignment, on shift or without a schedule, in a tenant with a
+  free vehicle that fits the shipment's weight and volume. It returns
+  each driver's straight-line distance to the pickup (null when no
+  position is known), their live-assignment load, a suggested vehicle
+  (their own when it fits, else the smallest free fit), and that
+  suggestion's spare-capacity slack.
+- Radius and ranking are tenant settings (`tenant.settings.dispatch`):
+  `radiusStepsKm` (default `[5, 10, 20]`) widens until the first step
+  with a located candidate and excludes located drivers beyond it;
+  drivers without a position are always listed after the pool (tracking
+  fills `driver_locations` in Step 10), and a dispatcher can still name
+  any eligible driver manually. `strategy` (default `balanced`) ranks by
+  `nearest` distance, `least_loaded` workload, or a weighted blend of
+  distance, load, and capacity fit; `offerTtlMinutes` (default 15) and
+  `maxCandidates` (default 10) round out the block, and every invalid
+  field falls back to its default.
+- Lifecycle: `POST /shipments/:id/assignments` opens an offer (`offered`,
+  TTL-stamped, the driver's own vehicle defaulted in when it fits);
+  drivers answer with `POST /assignments/:id/accept` or `/reject` (their
+  own offers only: `drivers:manage-own` plus an ownership check in the
+  service); `POST /assignments/:id/cancel` (dispatchers any, drivers
+  their own) withdraws a pending offer and releases an accepted one back
+  to CONFIRMED. `GET /assignments/me` lists a driver's offers and jobs.
+- Accepting drives `CONFIRMED -> ASSIGNED` through the shipments
+  service's trusted `applyAssignment` entry point (aggregate, history,
+  events, and version included); the offer row and the shipment move in
+  one transaction. If the shipment moved under the offer, the offer is
+  folded away as `cancelled` and the caller sees the shipment's own 409.
+- Concurrency: three partial unique indexes make a live (offered or
+  accepted) assignment unique per shipment, per driver, and per vehicle,
+  so concurrent double-offers lose with a `23505` the service maps to
+  `ASSIGNMENT_ALREADY_OFFERED` / `DISPATCH_DRIVER_BUSY` /
+  `DISPATCH_VEHICLE_BUSY` — the phase-1, in-transaction answer to the
+  saga's `FOR UPDATE SKIP LOCKED` claim.
+- Expiry is lazy in phase 1: dispatch reads sweep the tenant's overdue
+  offers (`expired`, `AssignmentExpired` published), and answering a
+  lapsed offer is 409 `ASSIGNMENT_EXPIRED`. The phase-2 timeout job
+  replaces the sweep (documented tradeoff: two concurrent sweeps can
+  double-publish an expiry; best-effort delivery makes that noise, not
+  damage).
+- Events: `DriverAssigned` (accept), `AssignmentRejected`,
+  `AssignmentExpired`, and `AssignmentCancelled`, all published inside
+  the tenant transaction. No phase-1 consumer needs them — customers
+  already learn about `ASSIGNED` through `ShipmentStatusChanged`.
 
 ## Notifications and events
 
@@ -286,6 +342,7 @@ src/
   modules/drivers/        # driver profiles, shifts, availability
   modules/pricing/        # tenant rate cards and the quote engine
   modules/shipments/      # aggregate, state machine, history, tracking
+  modules/dispatch/       # candidate search, assignment lifecycle
   modules/notifications/  # listeners, templates, email adapters, email log
   shared/tenancy/         # CLS context, transaction interceptor, tenancy module
   shared/messaging/       # event envelope, bus port, EventEmitter adapter

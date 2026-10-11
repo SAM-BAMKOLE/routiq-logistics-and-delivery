@@ -68,6 +68,10 @@ export interface RehydrateShipmentProps extends CreateShipmentProps {
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly items: readonly ShipmentItem[];
+  /** Current driver, set by the `assign` transition and cleared by `release`. */
+  readonly driverId?: string | null;
+  /** Current vehicle, same lifecycle as {@link driverId}. */
+  readonly vehicleId?: string | null;
 }
 
 /**
@@ -82,6 +86,8 @@ export class Shipment {
   private currentStatus: ShipmentStatus;
   private currentVersion: number;
   private attempts: number;
+  private assignedDriverId: string | null;
+  private assignedVehicleId: string | null;
   private readonly eventQueue: ShipmentDomainEvent[] = [];
   private readonly transitionQueue: ShipmentTransition[] = [];
 
@@ -105,6 +111,8 @@ export class Shipment {
       version: number;
       createdAt: Date;
       updatedAt: Date;
+      driverId?: string | null;
+      vehicleId?: string | null;
     },
   ) {
     this.currentStatus = props.status;
@@ -112,6 +120,8 @@ export class Shipment {
     this.currentVersion = props.version;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
+    this.assignedDriverId = props.driverId ?? null;
+    this.assignedVehicleId = props.vehicleId ?? null;
   }
 
   readonly createdAt: Date;
@@ -127,6 +137,16 @@ export class Shipment {
 
   get failedAttempts(): number {
     return this.attempts;
+  }
+
+  /** The driver currently assigned to this shipment, if any. */
+  get driverId(): string | null {
+    return this.assignedDriverId;
+  }
+
+  /** The vehicle currently assigned to this shipment, if any. */
+  get vehicleId(): string | null {
+    return this.assignedVehicleId;
   }
 
   /** Events raised since the last {@link pullDomainEvents}. */
@@ -202,6 +222,8 @@ export class Shipment {
         version: props.version,
         createdAt: props.createdAt,
         updatedAt: props.updatedAt,
+        driverId: props.driverId ?? null,
+        vehicleId: props.vehicleId ?? null,
       },
     );
   }
@@ -229,7 +251,8 @@ export class Shipment {
   }
 
   /** CONFIRMED to ASSIGNED. Dispatch owns who the driver is; the aggregate
-   * only carries the identity into its events and history. */
+   * records the pair on the row (driver-scoped reads check it) and carries it
+   * into its events and history. */
   assign(driverId: string, vehicleId: string | null = null): void {
     if (!driverId) {
       throw new ShipmentDomainError(
@@ -237,11 +260,15 @@ export class Shipment {
         'An assignment needs a driver.',
       );
     }
+    this.assignedDriverId = driverId;
+    this.assignedVehicleId = vehicleId;
     this.transition('ASSIGNED', { payload: { driverId, vehicleId } });
   }
 
   /** ASSIGNED back to CONFIRMED (assignment withdrawn or rejected). */
   release(reason: string | null = null): void {
+    this.assignedDriverId = null;
+    this.assignedVehicleId = null;
     this.transition('CONFIRMED', { reason });
   }
 

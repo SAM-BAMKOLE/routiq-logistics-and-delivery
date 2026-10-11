@@ -67,6 +67,8 @@ export class TypeOrmShipmentRepository implements ShipmentRepository {
       {
         status: shipment.status,
         failedAttempts: shipment.failedAttempts,
+        driverId: shipment.driverId,
+        vehicleId: shipment.vehicleId,
       },
     );
   }
@@ -94,6 +96,7 @@ export class TypeOrmShipmentRepository implements ShipmentRepository {
         tenantId,
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.customerId ? { customerId: filters.customerId } : {}),
+        ...(filters.driverId ? { driverId: filters.driverId } : {}),
       },
       order: { createdAt: 'ASC' },
     });
@@ -157,6 +160,8 @@ function toDomain(
     version: entity.version,
     createdAt: entity.createdAt,
     updatedAt: entity.updatedAt,
+    driverId: entity.driverId,
+    vehicleId: entity.vehicleId,
     items,
   });
 }

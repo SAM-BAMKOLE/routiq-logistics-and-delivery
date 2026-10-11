@@ -11,6 +11,7 @@ import {
 import { randomBytes, randomUUID } from 'node:crypto';
 import { CustomersService } from '../../customers/application/customers.service.js';
 import type { Role } from '../../identity/domain/membership.js';
+import type { Driver } from '../../drivers/domain/driver.js';
 import { DriversService } from '../../drivers/application/drivers.service.js';
 import { VehiclesService } from '../../fleet/application/vehicles.service.js';
 import { QuotesService } from '../../pricing/application/quotes.service.js';
@@ -154,9 +155,16 @@ export class ShipmentsService {
     filters: ShipmentListFilters = {},
   ): Promise<Shipment[]> {
     if (actor.role === 'driver') {
-      // Assignment-scoped reads land with the dispatch module (Step 8);
-      // until then a driver sees no shipments at all.
-      return [];
+      // Drivers see exactly the shipments the dispatch module assigned to
+      // them; the shipment row records who is driving.
+      const driver = await this.ownDriverOrNone(tenantId, actor.userId);
+      if (!driver) {
+        return [];
+      }
+      return this.shipments.listByTenant(tenantId, {
+        ...filters,
+        driverId: driver.id,
+      });
     }
     if (actor.role === 'customer') {
       const own = await this.customers.listCustomersByUser(
@@ -280,6 +288,61 @@ export class ShipmentsService {
     );
   }
 
+  /**
+   * Dispatch-internal: apply an accepted assignment (CONFIRMED to ASSIGNED)
+   * for the given driver. The dispatch module has already authorized the
+   * driver and owns the assignment row; this entry point spares it a fake
+   * actor and an If-Match version while keeping the guarantee that every
+   * status change still flows through the aggregate, its history, and its
+   * events. Not exposed over HTTP.
+   */
+  async applyAssignment(
+    tenantId: string,
+    id: string,
+    driverId: string,
+    vehicleId: string | null,
+    actorUserId: string,
+  ): Promise<Shipment> {
+    return this.runTrustedAction(tenantId, id, actorUserId, (s) =>
+      s.assign(driverId, vehicleId),
+    );
+  }
+
+  /** Dispatch-internal: withdraw an accepted assignment (ASSIGNED back to
+   * CONFIRMED). Same trust contract as {@link applyAssignment}. */
+  async releaseAssignment(
+    tenantId: string,
+    id: string,
+    reason: string | null,
+    actorUserId: string,
+  ): Promise<Shipment> {
+    return this.runTrustedAction(tenantId, id, actorUserId, (s) =>
+      s.release(reason),
+    );
+  }
+
+  /** Shared body of the dispatch-internal entry points above. */
+  private async runTrustedAction(
+    tenantId: string,
+    id: string,
+    actorUserId: string,
+    apply: (shipment: Shipment) => void,
+  ): Promise<Shipment> {
+    const shipment = await this.shipments.findById(id);
+    if (!shipment || shipment.tenantId !== tenantId) {
+      throw shipmentNotFound(id);
+    }
+    try {
+      apply(shipment);
+    } catch (error) {
+      throw mapDomainError(error);
+    }
+    await this.shipments.save(shipment);
+    await this.persistHistory(shipment, actorUserId);
+    await this.publishEvents(shipment);
+    return shipment;
+  }
+
   private async runAction(
     actor: ShipmentActor,
     tenantId: string,
@@ -315,7 +378,8 @@ export class ShipmentsService {
   /**
    * Loads a shipment and applies the ownership policy: dispatchers and
    * admins act on everything in the tenant, customers on their own, drivers
-   * on nothing yet (their assignment-scoped rights arrive with dispatch).
+   * on the shipments assigned to them (dispatch records the driver on the
+   * shipment row).
    */
   private async loadOwned(
     actor: ShipmentActor,
@@ -339,7 +403,13 @@ export class ShipmentsService {
       // Non-own reads answer 404 so foreign ids never leak existence.
       return isOwn ? shipment : null;
     }
-    // Drivers: assignment checks land with dispatch (Step 8).
+    // Drivers: the shipment row records who is driving, so only the assigned
+    // driver may read or act on it. Everyone else gets a 404 for reads and a
+    // 403 for actions, matching the customer branch above.
+    const driver = await this.ownDriverOrNone(tenantId, actor.userId);
+    if (driver && shipment.driverId === driver.id) {
+      return shipment;
+    }
     if (options.forAction) {
       throw new ForbiddenException({
         message:
@@ -348,6 +418,22 @@ export class ShipmentsService {
       });
     }
     return null;
+  }
+
+  /** The caller's driver profile, or null when they simply do not have one
+   * (an admin flipping a switch should not explode into a 404 here). */
+  private async ownDriverOrNone(
+    tenantId: string,
+    userId: string,
+  ): Promise<Driver | null> {
+    try {
+      return await this.drivers.getOwnDriver(tenantId, userId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async assertCustomerIsOwn(

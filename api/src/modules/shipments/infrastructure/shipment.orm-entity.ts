@@ -36,6 +36,12 @@ export class ShipmentOrmEntity {
   @Column({ type: 'text' })
   status: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  driverId: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  vehicleId: string | null;
+
   @Column({ type: 'double precision' })
   weightKg: number;
 

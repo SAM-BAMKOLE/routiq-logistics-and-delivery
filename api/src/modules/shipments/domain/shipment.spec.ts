@@ -85,6 +85,9 @@ describe('Shipment aggregate', () => {
       vehicleId: 'v-9',
       toStatus: 'ASSIGNED',
     });
+    // The row records who is driving: that is what driver-scoped reads check.
+    expect(shipment.driverId).toBe('d-9');
+    expect(shipment.vehicleId).toBe('v-9');
   });
 
   it('refuses to confirm without a quote', () => {
@@ -125,6 +128,9 @@ describe('Shipment aggregate', () => {
     shipment.assign('d-1');
     shipment.release('driver declined');
     expect(shipment.status).toBe('CONFIRMED');
+    // Releasing clears the recorded driver and vehicle again.
+    expect(shipment.driverId).toBeNull();
+    expect(shipment.vehicleId).toBeNull();
   });
 
   it('requires a driver on assignment', () => {

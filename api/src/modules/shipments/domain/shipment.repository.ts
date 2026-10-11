@@ -11,6 +11,8 @@ export const SHIPMENT_HISTORY_REPOSITORY = Symbol('SHIPMENT_HISTORY_REPOSITORY')
 export interface ShipmentListFilters {
   status?: ShipmentStatus;
   customerId?: string;
+  /** Driver profile id; drivers list exactly their own shipments. */
+  driverId?: string;
 }
 
 /**

@@ -118,11 +118,7 @@ export class DriversService {
   }
 
   /** Resolves the caller's own driver profile from their membership. */
-  async setOwnAvailability(
-    tenantId: string,
-    userId: string,
-    availability: DriverAvailability,
-  ): Promise<Driver> {
+  async getOwnDriver(tenantId: string, userId: string): Promise<Driver> {
     const membership = await this.memberships.findByTenantAndUser(
       tenantId,
       userId,
@@ -136,6 +132,16 @@ export class DriversService {
         code: 'DRIVER_PROFILE_NOT_FOUND',
       });
     }
+    return driver;
+  }
+
+  /** Flips the caller's own availability flag via their driver profile. */
+  async setOwnAvailability(
+    tenantId: string,
+    userId: string,
+    availability: DriverAvailability,
+  ): Promise<Driver> {
+    const driver = await this.getOwnDriver(tenantId, userId);
     const updated = await this.drivers.update(driver.id, { availability });
     if (!updated) {
       throw driverNotFound(driver.id);

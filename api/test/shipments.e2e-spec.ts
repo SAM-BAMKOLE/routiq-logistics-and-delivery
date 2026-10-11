@@ -23,7 +23,7 @@ interface ActOptions {
  * the state machine's reachable transitions, the If-Match precondition
  * (428 missing, 412 stale), the retry limit that forces a return, and the
  * role policies that keep customers on their own shipments and drivers on
- * nothing until dispatch lands in Step 8.
+ * exactly the shipments dispatch assigned to them (Step 8).
  */
 describe('Shipments API (e2e)', () => {
   let app: INestApplication;
@@ -396,17 +396,40 @@ describe('Shipments API (e2e)', () => {
       expect(confirm.body.code).toBe('PERMISSION_DENIED');
     });
 
-    it('keeps drivers on the sideline until dispatch (Step 8)', async () => {
+    it('scopes drivers to their assigned shipments (Step 8 dispatch)', async () => {
+      // Everything a driver lists is a shipment dispatch assigned to them.
+      const assigned = await outForDelivery(opsB);
       const listed = await request(app.getHttpServer())
         .get('/api/v1/shipments')
         .set(auth(driver.accessToken))
         .expect(200);
-      expect(listed.body.data).toEqual([]);
+      expect(listed.body.data.length).toBeGreaterThan(0);
+      expect(
+        listed.body.data.every(
+          (shipment: { driverId: string }) =>
+            shipment.driverId === fixture.driverBId,
+        ),
+      ).toBe(true);
+      expect(listed.body.data.map((s: { id: string }) => s.id)).toContain(
+        assigned.id,
+      );
 
-      const assigned = await outForDelivery(opsB);
-      const pickup = await act(`/api/v1/shipments/${assigned.id}/pickup`, driver, {
-        version: assigned.version,
-      });
+      // Their own shipment reads and acts; anything unassigned stays out.
+      await request(app.getHttpServer())
+        .get(`/api/v1/shipments/${assigned.id}`)
+        .set(auth(driver.accessToken))
+        .expect(200);
+
+      const unassigned = await createShipment(opsB);
+      await request(app.getHttpServer())
+        .get(`/api/v1/shipments/${unassigned.body.id}`)
+        .set(auth(driver.accessToken))
+        .expect(404);
+      const pickup = await act(
+        `/api/v1/shipments/${unassigned.body.id}/pickup`,
+        driver,
+        { version: unassigned.body.version as number },
+      );
       expect(pickup.status).toBe(403);
       expect(pickup.body.code).toBe('SHIPMENT_NOT_ASSIGNED');
     });

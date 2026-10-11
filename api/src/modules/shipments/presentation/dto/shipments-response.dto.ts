@@ -54,6 +54,20 @@ export class ShipmentResponseDto {
   @ApiProperty({ description: 'Failed delivery attempts so far.' })
   failedAttempts: number;
 
+  @ApiProperty({
+    nullable: true,
+    format: 'uuid',
+    description: 'Driver currently assigned to this shipment, if any.',
+  })
+  driverId: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    format: 'uuid',
+    description: 'Vehicle currently assigned to this shipment, if any.',
+  })
+  vehicleId: string | null;
+
   @ApiProperty({ description: 'Optimistic-lock version (the ETag value).' })
   version: number;
 
@@ -81,6 +95,8 @@ export class ShipmentResponseDto {
       priceMinor: shipment.priceMinor,
       currency: shipment.currency,
       failedAttempts: shipment.failedAttempts,
+      driverId: shipment.driverId,
+      vehicleId: shipment.vehicleId,
       version: shipment.version,
       items: shipment.items.map((item) => ({
         description: item.description,

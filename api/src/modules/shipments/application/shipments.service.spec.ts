@@ -107,7 +107,8 @@ function makeHarness(options: { quotes?: QuotesService } = {}): Harness {
         (shipment) =>
           shipment.tenantId === tenantId &&
           (!filters.status || shipment.status === filters.status) &&
-          (!filters.customerId || shipment.customerId === filters.customerId),
+          (!filters.customerId || shipment.customerId === filters.customerId) &&
+          (!filters.driverId || shipment.driverId === filters.driverId),
       ),
   };
 
@@ -168,6 +169,17 @@ function makeHarness(options: { quotes?: QuotesService } = {}): Harness {
         });
       }
       return { id };
+    },
+    getOwnDriver: async (_tenantId: string, userId: string) => {
+      const profiles: Record<string, string> = { 'u-4': 'd-1', 'u-5': 'd-2' };
+      const driverId = profiles[userId];
+      if (!driverId) {
+        throw new NotFoundException({
+          message: 'This user has no driver profile in this tenant.',
+          code: 'DRIVER_PROFILE_NOT_FOUND',
+        });
+      }
+      return { id: driverId };
     },
   } as unknown as DriversService;
 
@@ -321,7 +333,7 @@ describe('ShipmentsService', () => {
   });
 
   describe('reads and policies', () => {
-    it('scopes lists: dispatchers see all, customers their own, drivers none', async () => {
+    it('scopes lists: dispatchers see all, customers their own, drivers their assigned', async () => {
       const h = makeHarness();
       // Staff ship for any tenant customer; the portal user only owns c-1.
       await h.service.create(dispatcher, 't-1', { ...baseCommand, customerId: 'c-2' });
@@ -329,6 +341,7 @@ describe('ShipmentsService', () => {
 
       expect(await h.service.list(dispatcher, 't-1')).toHaveLength(2);
       expect(await h.service.list(customerActor, 't-1')).toHaveLength(1);
+      // Nothing is dispatched yet, so the driver's list is empty.
       expect(await h.service.list(driverActor, 't-1')).toEqual([]);
     });
 
@@ -367,15 +380,48 @@ describe('ShipmentsService', () => {
       ).rejects.toMatchObject({ response: { code: 'SHIPMENT_NOT_FOUND' } });
     });
 
-    it('denies drivers actions until assignments exist (Step 8)', async () => {
+    it('denies drivers actions on shipments that are not theirs', async () => {
       const h = makeHarness();
-      const shipment = await createShipment(h);
+      const shipment = await createShipment(h); // still unassigned
       await expect(
         h.service.pickup(driverActor, 't-1', shipment.id, 1),
       ).rejects.toMatchObject({
         status: 403,
         response: { code: 'SHIPMENT_NOT_ASSIGNED' },
       });
+    });
+
+    it('lets drivers read, list, and act on their assigned shipments (Step 8)', async () => {
+      const h = makeHarness();
+      const shipment = await createShipment(h);
+      await h.service.confirm(dispatcher, 't-1', shipment.id, 1);
+      await h.service.assign(dispatcher, 't-1', shipment.id, 2, 'd-1', null);
+
+      // The shipment row records who is driving; that is the whole policy.
+      expect(shipment.driverId).toBe('d-1');
+      await expect(
+        h.service.get(driverActor, 't-1', shipment.id),
+      ).resolves.toBeDefined();
+      expect(await h.service.list(driverActor, 't-1')).toHaveLength(1);
+      const pickedUp = await h.service.pickup(driverActor, 't-1', shipment.id, 3);
+      expect(pickedUp.status).toBe('PICKED_UP');
+
+      // Another driver with a profile stays out; a user without one simply
+      // sees nothing (reads 404, actions 403).
+      const otherDriver: ShipmentActor = { userId: 'u-5', role: 'driver' };
+      await expect(
+        h.service.get(otherDriver, 't-1', shipment.id),
+      ).rejects.toMatchObject({ response: { code: 'SHIPMENT_NOT_FOUND' } });
+      await expect(
+        h.service.pickup(otherDriver, 't-1', shipment.id, 3),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'SHIPMENT_NOT_ASSIGNED' },
+      });
+      const noProfile: ShipmentActor = { userId: 'u-6', role: 'driver' };
+      await expect(
+        h.service.get(noProfile, 't-1', shipment.id),
+      ).rejects.toMatchObject({ response: { code: 'SHIPMENT_NOT_FOUND' } });
     });
   });
 
