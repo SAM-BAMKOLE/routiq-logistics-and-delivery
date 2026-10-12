@@ -24,6 +24,7 @@ import { ReportingModule } from './modules/reporting/reporting.module.js';
 import { OutboxModule } from './modules/outbox/outbox.module.js';
 import { IdempotencyModule } from './modules/idempotency/idempotency.module.js';
 import { RateLimitsModule } from './modules/ratelimits/rate-limits.module.js';
+import { GeofencingModule } from './modules/geofencing/geofencing.module.js';
 import { TenantsModule } from './modules/tenants/tenants.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { MessagingModule } from './shared/messaging/messaging.module.js';
@@ -90,6 +91,7 @@ import { validate } from './config/env.validation.js';
     OutboxModule,
     IdempotencyModule,
     RateLimitsModule,
+    GeofencingModule,
     // Rate limiting for the anonymous surfaces (public tracking, OTP
     // verification). The default is deliberately generous — it only exists
     // to stop a scrape; the two endpoints named above tighten it with
