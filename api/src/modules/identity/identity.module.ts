@@ -7,6 +7,7 @@ import {
   parseTtlToSeconds,
 } from './application/access-tokens.js';
 import { AuthService } from './application/auth.service.js';
+import { SessionValidator } from './application/session-validator.js';
 import { UsersService } from './application/users.service.js';
 import {
   MEMBERSHIP_REPOSITORY,
@@ -67,6 +68,7 @@ import { UsersController } from './presentation/users.controller.js';
   providers: [
     AuthService,
     UsersService,
+    SessionValidator,
     JwtAuthGuard,
     PermissionsGuard,
     PlatformAdminGuard,
@@ -86,6 +88,7 @@ import { UsersController } from './presentation/users.controller.js';
   exports: [
     AuthService,
     UsersService,
+    SessionValidator,
     JwtAuthGuard,
     PermissionsGuard,
     PlatformAdminGuard,

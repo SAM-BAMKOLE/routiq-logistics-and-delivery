@@ -15,6 +15,7 @@ import { CreateShipments1756000000011 } from './migrations/1756000000011-create-
 import { CreateEmailLog1756000000012 } from './migrations/1756000000012-create-email-log.js';
 import { CreateDispatch1756000000013 } from './migrations/1756000000013-create-dispatch.js';
 import { CreateRoutes1756000000014 } from './migrations/1756000000014-create-routes.js';
+import { CreateTrackingPod1756000000015 } from './migrations/1756000000015-create-tracking-pod.js';
 
 /**
  * Migrations are listed explicitly rather than loaded from a filesystem glob.
@@ -37,6 +38,7 @@ export const migrations = [
   CreateEmailLog1756000000012,
   CreateDispatch1756000000013,
   CreateRoutes1756000000014,
+  CreateTrackingPod1756000000015,
 ];
 
 /**

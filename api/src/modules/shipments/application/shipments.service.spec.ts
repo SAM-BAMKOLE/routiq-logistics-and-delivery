@@ -11,6 +11,7 @@ import type { QuotesService } from '../../pricing/application/quotes.service.js'
 import type { TenantsService } from '../../tenants/application/tenants.service.js';
 import { FakeEventBus } from '../../../shared/messaging/testing/fake-event-bus.js';
 import { Shipment } from '../domain/shipment.js';
+import type { DeliveryProofRead } from '../domain/delivery-proof-read.js';
 import type {
   ShipmentHistoryEntry,
   ShipmentListFilters,
@@ -66,6 +67,8 @@ interface Harness {
   addresses: Map<string, Address>;
   settings: Record<string, unknown>;
   failInserts: number;
+  /** Whether the proof-of-delivery table already holds a proof row. */
+  hasProof: boolean;
   bus: FakeEventBus;
 }
 
@@ -89,6 +92,7 @@ function makeHarness(options: { quotes?: QuotesService } = {}): Harness {
     addresses,
     settings: {},
     failInserts: 0,
+    hasProof: false,
     bus: new FakeEventBus(),
   };
 
@@ -199,6 +203,10 @@ function makeHarness(options: { quotes?: QuotesService } = {}): Harness {
     getById: async () => ({ settings: harness.settings }),
   } as unknown as TenantsService;
 
+  const proofRead = {
+    hasProof: async () => harness.hasProof,
+  } as unknown as DeliveryProofRead;
+
   harness.service = new ShipmentsService(
     shipmentRepository,
     historyRepository,
@@ -208,6 +216,7 @@ function makeHarness(options: { quotes?: QuotesService } = {}): Harness {
     vehiclesService,
     tenantsService,
     harness.bus,
+    proofRead,
   );
   return harness;
 }
@@ -244,6 +253,7 @@ describe('ShipmentsService', () => {
       expect(shipment.priceMinor).toBe(160_000);
       expect(shipment.currency).toBe('NGN');
       expect(shipment.trackingNumber).toMatch(/^SHP-[0-9A-HJKMNP-TV-Z]{12}$/);
+      expect(shipment.publicToken).toMatch(/^[0-9a-f]{32}$/);
       expect(shipment.items).toEqual([
         { description: 'Cartons', quantity: 10, weightKg: 120 },
       ]);
@@ -558,6 +568,16 @@ describe('ShipmentsService', () => {
         status: 422,
         response: { code: 'PROOF_REQUIRED' },
       });
+    });
+
+    it('lets a proof-demanding tenant deliver once a proof row exists', async () => {
+      const h = makeHarness();
+      const shipment = await toOutForDelivery(h);
+      h.settings = { requireProofOfDelivery: true };
+      h.hasProof = true;
+
+      const delivered = await h.service.deliver(dispatcher, 't-1', shipment.id, 6);
+      expect(delivered.status).toBe('DELIVERED');
     });
 
     it('delivers normally when proof is not demanded', async () => {

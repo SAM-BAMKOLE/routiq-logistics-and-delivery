@@ -1,10 +1,13 @@
 import { Shipment, ShipmentDomainError } from './shipment.js';
 
+const PUBLIC_TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+
 function newShipment(priceMinor: number | null = 50_000): Shipment {
   return Shipment.create({
     id: 's-1',
     tenantId: 't-1',
     trackingNumber: 'SHP-K7M2N9PQ4R8T',
+    publicToken: PUBLIC_TOKEN,
     customerId: 'c-1',
     pickupAddressId: 'a-1',
     dropoffAddressId: 'a-2',
@@ -36,6 +39,7 @@ describe('Shipment aggregate', () => {
     expect(shipment.status).toBe('CREATED');
     expect(shipment.version).toBe(1);
     expect(shipment.failedAttempts).toBe(0);
+    expect(shipment.publicToken).toBe(PUBLIC_TOKEN);
     expect(shipment.items).toHaveLength(1);
 
     expect(shipment.pullTransitions()).toEqual([
@@ -197,6 +201,7 @@ describe('Shipment aggregate', () => {
       id: 's-2',
       tenantId: 't-1',
       trackingNumber: 'SHP-AAAAAAAAAAAA',
+      publicToken: PUBLIC_TOKEN,
       customerId: 'c-1',
       pickupAddressId: 'a-1',
       dropoffAddressId: 'a-2',

@@ -21,6 +21,14 @@ export class ShipmentResponseDto {
   @ApiProperty({ example: 'SHP-K7M2N9PQ4R8T' })
   trackingNumber: string;
 
+  @ApiProperty({
+    example: '9f2c1a7e4b3d5c6a8e0f1b2d3c4a5b6c',
+    description:
+      'Second secret of the public tracking URL: ' +
+      '/api/v1/public/tracking/{trackingNumber}?token={publicToken}.',
+  })
+  publicToken: string;
+
   @ApiProperty({ format: 'uuid' })
   customerId: string;
 
@@ -84,6 +92,7 @@ export class ShipmentResponseDto {
     return {
       id: shipment.id,
       trackingNumber: shipment.trackingNumber,
+      publicToken: shipment.publicToken,
       customerId: shipment.customerId,
       pickupAddressId: shipment.pickupAddressId,
       dropoffAddressId: shipment.dropoffAddressId,

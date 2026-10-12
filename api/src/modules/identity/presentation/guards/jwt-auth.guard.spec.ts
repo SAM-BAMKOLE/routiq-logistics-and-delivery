@@ -4,6 +4,7 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import type { AccessTokenIssuer } from '../../application/access-tokens.js';
+import { SessionValidator } from '../../application/session-validator.js';
 import type { MembershipRepository } from '../../domain/membership.repository.js';
 import type { UserRepository } from '../../domain/user.repository.js';
 import type { TenantContextService } from '../../../../shared/tenancy/tenant-context.service.js';
@@ -84,7 +85,10 @@ function makeHarness(options?: {
   } as unknown as TenantContextService;
 
   return {
-    guard: new JwtAuthGuard(issuer, memberships, users, transactions, context),
+    guard: new JwtAuthGuard(
+      new SessionValidator(issuer, memberships, users, transactions),
+      context,
+    ),
     get principal() {
       return principal;
     },

@@ -368,8 +368,8 @@ describe('DispatchService', () => {
       expect(assignment.vehicleId).toBe('v-own');
       expect(assignment.expiresAt.getTime()).toBeGreaterThan(Date.now());
       expect(assignment.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 16 * 60_000);
-      // Opening an offer raises no event; the lifecycle starts at accept.
-      expect(h.bus.published).toEqual([]);
+      // Opening an offer raises AssignmentOffered for WS broadcast.
+      expect(h.bus.types()).toEqual(['AssignmentOffered']);
     });
 
     it('honors a TTL override (0 expires immediately)', async () => {
@@ -443,7 +443,7 @@ describe('DispatchService', () => {
       ]);
       expect(h.shipments.get('s-1')?.status).toBe('ASSIGNED');
       expect(h.shipments.get('s-1')?.driverId).toBe('d-1');
-      expect(h.bus.types()).toEqual(['DriverAssigned']);
+      expect(h.bus.types()).toEqual(['AssignmentOffered', 'DriverAssigned']);
     });
 
     it('hides foreign assignments and unknown profiles behind 404s', async () => {
@@ -472,7 +472,7 @@ describe('DispatchService', () => {
       ).rejects.toMatchObject({ status: 409, response: { code: 'ASSIGNMENT_EXPIRED' } });
 
       expect(h.store.get('as-late')?.status).toBe('expired');
-      expect(h.bus.types()).toEqual(['AssignmentExpired']);
+      expect(h.bus.types()).toEqual(['AssignmentOffered', 'AssignmentExpired']);
       expect(h.applied).toEqual([]);
     });
 
@@ -504,6 +504,7 @@ describe('DispatchService', () => {
       });
 
       expect(h.store.get('as-1')?.status).toBe('cancelled');
+      expect(h.bus.types()).toContain('AssignmentOffered');
       expect(h.bus.types()).toContain('AssignmentCancelled');
     });
   });
@@ -518,7 +519,7 @@ describe('DispatchService', () => {
       expect(rejected.status).toBe('rejected');
       expect(rejected.reason).toBe('on leave');
       expect(h.shipments.get('s-1')?.status).toBe('CONFIRMED');
-      expect(h.bus.types()).toEqual(['AssignmentRejected']);
+      expect(h.bus.types()).toEqual(['AssignmentOffered', 'AssignmentRejected']);
 
       // The driver and shipment are free again.
       const next = await h.service.create(dispatcher, 't-1', 's-1', {
@@ -537,7 +538,7 @@ describe('DispatchService', () => {
 
       expect(cancelled.status).toBe('cancelled');
       expect(h.released).toEqual([]);
-      expect(h.bus.types()).toEqual(['AssignmentCancelled']);
+      expect(h.bus.types()).toEqual(['AssignmentOffered', 'AssignmentCancelled']);
     });
 
     it('releases an accepted assignment back to CONFIRMED', async () => {
@@ -613,7 +614,7 @@ describe('DispatchService', () => {
 
       expect(mine.map((assignment) => assignment.id)).toEqual(['as-late']);
       expect(mine[0].status).toBe('expired');
-      expect(h.bus.types()).toEqual(['AssignmentExpired']);
+      expect(h.bus.types()).toEqual(['AssignmentOffered', 'AssignmentExpired']);
     });
 
     it('404s a user without a driver profile', async () => {

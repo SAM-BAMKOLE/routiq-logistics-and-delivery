@@ -49,6 +49,13 @@ export interface CreateShipmentProps {
   readonly id: string;
   readonly tenantId: string;
   readonly trackingNumber: string;
+  /**
+   * Second secret of the public tracking endpoint: looking a shipment up
+   * anonymously needs the tracking number AND this token, so a leaked
+   * tracking number alone cannot fetch a customer's delivery. Generated at
+   * creation (see the service), never rotated in phase 1.
+   */
+  readonly publicToken: string;
   readonly customerId: string;
   readonly pickupAddressId: string;
   readonly dropoffAddressId: string;
@@ -95,6 +102,7 @@ export class Shipment {
     readonly id: string,
     readonly tenantId: string,
     readonly trackingNumber: string,
+    readonly publicToken: string,
     readonly customerId: string,
     readonly pickupAddressId: string,
     readonly dropoffAddressId: string,
@@ -165,6 +173,7 @@ export class Shipment {
       input.id,
       input.tenantId,
       input.trackingNumber,
+      input.publicToken,
       input.customerId,
       input.pickupAddressId,
       input.dropoffAddressId,
@@ -206,6 +215,7 @@ export class Shipment {
       props.id,
       props.tenantId,
       props.trackingNumber,
+      props.publicToken,
       props.customerId,
       props.pickupAddressId,
       props.dropoffAddressId,

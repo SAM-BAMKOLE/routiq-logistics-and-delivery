@@ -56,6 +56,7 @@ export class AssignmentDomainError extends Error {
 }
 
 export type AssignmentEventType =
+  | 'AssignmentOffered'
   | 'DriverAssigned'
   | 'AssignmentRejected'
   | 'AssignmentExpired'
@@ -116,7 +117,7 @@ export class Assignment {
 
   static offer(props: OfferAssignmentProps): Assignment {
     const now = new Date();
-    return new Assignment(
+    const assignment = new Assignment(
       props.id,
       props.tenantId,
       props.shipmentId,
@@ -130,6 +131,18 @@ export class Assignment {
       now,
       'offered',
     );
+    // The offer is itself an event: the application layer publishes it right
+    // after the insert, and the WebSocket gateway pushes it to the driver's
+    // room as `offer:new`.
+    assignment.eventQueue.push({
+      type: 'AssignmentOffered',
+      occurredAt: now,
+      payload: {
+        ...assignment.basePayload(),
+        expiresAt: props.expiresAt.toISOString(),
+      },
+    });
+    return assignment;
   }
 
   static rehydrate(props: RehydrateAssignmentProps): Assignment {

@@ -19,6 +19,10 @@ import { TenantsService } from '../../tenants/application/tenants.service.js';
 import { EVENT_BUS, type EventBus } from '../../../shared/messaging/event-bus.js';
 import { createEnvelope } from '../../../shared/messaging/event-envelope.js';
 import { Shipment, ShipmentDomainError } from '../domain/shipment.js';
+import {
+  DELIVERY_PROOF_READ,
+  type DeliveryProofRead,
+} from '../domain/delivery-proof-read.js';
 import { shipmentPolicyFrom } from '../domain/shipment-policy.js';
 import {
   SHIPMENT_HISTORY_REPOSITORY,
@@ -29,6 +33,7 @@ import {
   type ShipmentRepository,
 } from '../domain/shipment.repository.js';
 import { generateTrackingNumber } from '../domain/tracking-number.js';
+import { generatePublicToken } from '../domain/public-token.js';
 
 /** Who is acting: the authenticated principal's identity and tenant role. */
 export interface ShipmentActor {
@@ -74,6 +79,8 @@ export class ShipmentsService {
     private readonly vehicles: VehiclesService,
     private readonly tenants: TenantsService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(DELIVERY_PROOF_READ)
+    private readonly proofRead: DeliveryProofRead,
   ) {}
 
   async create(
@@ -127,6 +134,7 @@ export class ShipmentsService {
         id: randomUUID(),
         tenantId,
         trackingNumber: generateTrackingNumber(randomTrackingBytes()),
+        publicToken: generatePublicToken(),
         customerId: command.customerId,
         pickupAddressId: command.pickupAddressId,
         dropoffAddressId: command.dropoffAddressId,
@@ -243,13 +251,14 @@ export class ShipmentsService {
   ): Promise<Shipment> {
     const policy = await this.policyFor(tenantId);
     if (policy.requireProofOfDelivery) {
-      // Proof of delivery lands in Step 10; until it can be verified,
-      // demanding it blocks the transition outright.
-      throw new UnprocessableEntityException({
-        message:
-          'This tenant requires proof of delivery before a shipment can be delivered.',
-        code: 'PROOF_REQUIRED',
-      });
+      const hasProof = await this.proofRead.hasProof(id);
+      if (!hasProof) {
+        throw new UnprocessableEntityException({
+          message:
+            'This tenant requires proof of delivery before a shipment can be delivered.',
+          code: 'PROOF_REQUIRED',
+        });
+      }
     }
     return this.runAction(actor, tenantId, id, expectedVersion, (s) => s.deliver());
   }

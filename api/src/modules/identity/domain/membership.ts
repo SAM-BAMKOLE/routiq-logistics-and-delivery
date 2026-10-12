@@ -61,6 +61,8 @@ export type Permission =
   | 'drivers:manage'
   | 'drivers:manage-own'
   | 'drivers:manage-availability'
+  | 'tracking:push'
+  | 'tracking:read'
   | 'reports:read'
   | 'quotes:create'
   | 'pricing:read'
@@ -80,6 +82,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[] | ['*']> = {
     'fleet:read',
     'drivers:read',
     'drivers:manage-availability',
+    'tracking:read',
     'reports:read',
   ],
   driver: [
@@ -87,6 +90,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[] | ['*']> = {
     'shipments:update-status',
     'routes:read-own',
     'drivers:manage-own',
+    'tracking:push',
     'profile:read-own',
   ],
   customer: ['shipments:create', 'shipments:read-own', 'quotes:create', 'profile:read-own'],

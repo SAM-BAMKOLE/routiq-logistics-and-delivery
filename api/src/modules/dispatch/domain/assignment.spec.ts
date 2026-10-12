@@ -14,7 +14,7 @@ function expectDomainError(fn: () => void, code: string): void {
 }
 
 function offer(expiresAt = new Date(Date.now() + 15 * 60_000)): Assignment {
-  return Assignment.offer({
+  const assignment = Assignment.offer({
     id: 'as-1',
     tenantId: 't-1',
     shipmentId: 's-1',
@@ -22,6 +22,10 @@ function offer(expiresAt = new Date(Date.now() + 15 * 60_000)): Assignment {
     vehicleId: 'v-1',
     expiresAt,
   });
+  // The application layer publishes AssignmentOffered immediately after the
+  // insert, so later transitions in these tests model a fresh queue.
+  assignment.pullDomainEvents();
+  return assignment;
 }
 
 describe('Assignment aggregate', () => {
@@ -31,6 +35,29 @@ describe('Assignment aggregate', () => {
     expect(assignment.isLive).toBe(true);
     expect(assignment.respondedAt).toBeNull();
     expect(assignment.reason).toBeNull();
+  });
+
+  it('raises AssignmentOffered when the offer is created', () => {
+    const expiresAt = new Date('2026-01-01T10:15:00Z');
+    const assignment = Assignment.offer({
+      id: 'as-1',
+      tenantId: 't-1',
+      shipmentId: 's-1',
+      driverId: 'd-1',
+      vehicleId: 'v-1',
+      expiresAt,
+    });
+
+    const events = assignment.pullDomainEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('AssignmentOffered');
+    expect(events[0].payload).toMatchObject({
+      assignmentId: 'as-1',
+      shipmentId: 's-1',
+      driverId: 'd-1',
+      vehicleId: 'v-1',
+      expiresAt: expiresAt.toISOString(),
+    });
   });
 
   it('accepts: stamps the response, holds the pair, raises DriverAssigned', () => {

@@ -19,6 +19,7 @@ import { createEnvelope } from '../../../shared/messaging/event-envelope.js';
 import {
   Assignment,
   AssignmentDomainError,
+  type AssignmentDomainEvent,
 } from '../domain/assignment.js';
 import {
   ASSIGNMENT_REPOSITORY,
@@ -176,6 +177,18 @@ export class DispatchService {
     } catch (error) {
       throw mapUniqueViolation(error);
     }
+    // The offer event goes out before the dispatcher gets the 201: the
+    // WebSocket gateway pushes it to the driver's room as `offer:new`. The
+    // addresses ride along so the driver's card shows the job without a
+    // second fetch.
+    await this.publishEvents(assignment, (event) =>
+      event.type === 'AssignmentOffered'
+        ? {
+            pickupAddressId: shipment.pickupAddressId,
+            dropoffAddressId: shipment.dropoffAddressId,
+          }
+        : {},
+    );
     this.logger.debug(
       { assignmentId: assignment.id, shipmentId, driverId: driver.id },
       'dispatch offer created',
@@ -418,7 +431,17 @@ export class DispatchService {
    * RLS context; delivery is best-effort (a listener failure never fails
    * the request), matching the shipments publisher.
    */
-  private async publishEvents(assignment: Assignment): Promise<void> {
+  /**
+   * Publishes the aggregate's drained events. `enrich` adds facts the event
+   * itself does not carry (the offer's addresses, from the shipment loaded
+   * by the caller) so consumers get one complete payload.
+   */
+  private async publishEvents(
+    assignment: Assignment,
+    enrich: (
+      event: AssignmentDomainEvent,
+    ) => Record<string, unknown> = () => ({}),
+  ): Promise<void> {
     const events = assignment.pullDomainEvents();
     if (events.length === 0) {
       return;
@@ -431,7 +454,7 @@ export class DispatchService {
           aggregateType: 'dispatch_assignment',
           aggregateId: assignment.id,
           occurredAt: event.occurredAt,
-          payload: event.payload,
+          payload: { ...event.payload, ...enrich(event) },
         }),
       ),
     );

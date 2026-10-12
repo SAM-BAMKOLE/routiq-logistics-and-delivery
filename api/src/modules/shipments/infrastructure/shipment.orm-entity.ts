@@ -24,6 +24,10 @@ export class ShipmentOrmEntity {
   @Column({ type: 'text' })
   trackingNumber: string;
 
+  /** Second secret of the public tracking endpoint (random, per tenant). */
+  @Column({ type: 'text' })
+  publicToken: string;
+
   @Column({ type: 'uuid' })
   customerId: string;
 
