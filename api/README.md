@@ -444,6 +444,15 @@ src/
   modules/dispatch/       # candidate search, assignment lifecycle
   modules/tracking/        # driver locations, shipment points, gateway, retention
   modules/proof-of-delivery/# OTP, proofs, delivery verification
+  modules/billing/         # invoices and billing
+  modules/reporting/       # reports and exports
+  modules/outbox/          # transactional outbox
+  modules/idempotency/     # idempotency support
+  modules/ratelimits/      # rate limiting support
+  modules/geofencing/      # geofencing & ETA
+  modules/assets/          # assets & warehouses
+  modules/compliance/      # compliance & audit
+  modules/hardening/       # final hardening
   modules/notifications/  # listeners, templates, email adapters, email log
   shared/tenancy/         # CLS context, transaction interceptor, tenancy module
   shared/messaging/       # event envelope, bus port, EventEmitter adapter
