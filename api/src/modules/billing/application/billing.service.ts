@@ -1,5 +1,6 @@
 ﻿import { Injectable, Inject } from '@nestjs/common';
-import { BILL_REPOSITORY, BillRepository } from '../domain/bill.repository.js';
+import { BILL_REPOSITORY } from '../domain/bill.repository.js';
+import type { BillRepository } from '../domain/bill.repository.js';
 
 @Injectable()
 export class BillingService {
