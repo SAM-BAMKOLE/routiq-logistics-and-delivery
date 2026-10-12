@@ -5,7 +5,7 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import type { Role } from '../../identity/domain/membership.js';
 import { CustomersService } from '../../customers/application/customers.service.js';

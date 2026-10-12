@@ -5,6 +5,7 @@ import { DriversModule } from '../drivers/drivers.module.js';
 import { FleetModule } from '../fleet/fleet.module.js';
 import { IdentityModule } from '../identity/identity.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
+import { MessagingModule } from '../../shared/messaging/messaging.module.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
 import { ShipmentsService } from './application/shipments.service.js';
 import { DELIVERY_PROOF_READ } from './domain/delivery-proof-read.js';
@@ -46,6 +47,7 @@ import { ShipmentsController } from './presentation/shipments.controller.js';
     TenantsModule,
     DriversModule,
     FleetModule,
+    MessagingModule,
   ],
   controllers: [ShipmentsController],
   providers: [
