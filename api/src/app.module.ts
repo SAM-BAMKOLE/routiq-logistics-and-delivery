@@ -19,6 +19,7 @@ import { DispatchModule } from './modules/dispatch/dispatch.module.js';
 import { RoutingModule } from './modules/routing/routing.module.js';
 import { TrackingModule } from './modules/tracking/tracking.module.js';
 import { ProofOfDeliveryModule } from './modules/proof-of-delivery/proof-of-delivery.module.js';
+import { BillingModule } from './modules/billing/billing.module.js';
 import { TenantsModule } from './modules/tenants/tenants.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { MessagingModule } from './shared/messaging/messaging.module.js';
@@ -80,6 +81,7 @@ import { validate } from './config/env.validation.js';
     NotificationsModule,
     TrackingModule,
     ProofOfDeliveryModule,
+    BillingModule,
     // Rate limiting for the anonymous surfaces (public tracking, OTP
     // verification). The default is deliberately generous — it only exists
     // to stop a scrape; the two endpoints named above tighten it with
