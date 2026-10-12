@@ -5,6 +5,7 @@ import { CustomersModule } from '../customers/customers.module.js';
 import { IdentityModule } from '../identity/identity.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { ShipmentsModule } from '../shipments/shipments.module.js';
+import { TenantsModule } from '../tenants/tenants.module.js';
 import { OtpEmailsListener } from './application/otp-emails.listener.js';
 import { ProofsService } from './application/proofs.service.js';
 import { PROOF_REPOSITORY } from './domain/proof.repository.js';
@@ -32,6 +33,7 @@ import { ProofOfDeliveryController } from './presentation/proof-of-delivery.cont
     ShipmentsModule,
     CustomersModule,
     NotificationsModule,
+    TenantsModule,
   ],
   controllers: [ProofOfDeliveryController],
   providers: [
