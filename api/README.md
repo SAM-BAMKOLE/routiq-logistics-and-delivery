@@ -416,8 +416,8 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
   `ASSIGNED`/`OUT_FOR_DELIVERY` → driver-assigned / out-for-delivery;
   delivered → receipt (critical); failed attempt → reason-carrying
   failure (critical). `UserInvited` and `PasswordResetRequested` become
-  invite and reset emails (critical); customers without an email address
-  are skipped with a debug log.
+  invite and reset emails (critical); `DeliveryOtpIssued` sends delivery OTP (critical);
+  customers without an email address are skipped with a debug log.
 
 ## Configuration
 
@@ -442,6 +442,8 @@ src/
   modules/pricing/        # tenant rate cards and the quote engine
   modules/shipments/      # aggregate, state machine, history, tracking
   modules/dispatch/       # candidate search, assignment lifecycle
+  modules/tracking/        # driver locations, shipment points, gateway, retention
+  modules/proof-of-delivery/# OTP, proofs, delivery verification
   modules/notifications/  # listeners, templates, email adapters, email log
   shared/tenancy/         # CLS context, transaction interceptor, tenancy module
   shared/messaging/       # event envelope, bus port, EventEmitter adapter
@@ -454,5 +456,5 @@ test/
 ```
 
 The Phase-1 build order (tenancy → identity → customers/fleet → pricing →
-shipments → …) and every design decision live in the
+shipments → dispatch → routing → tracking/POD) and every design decision live in the
 [architecture doc](../docs/architecture.md).
