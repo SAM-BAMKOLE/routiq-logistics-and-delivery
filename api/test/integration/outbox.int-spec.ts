@@ -67,7 +67,10 @@ describe('Outbox (integration)', () => {
 
     process.env.DATABASE_URL = readDatabaseState().appUrl;
     process.env.JWT_ACCESS_SECRET = 'integration-test-access-secret-min-32-chars';
-    process.env.OUTBOX_RELAY_ENABLED = 'false';
+
+    // The outbox table is global and shared across the whole run; this suite
+    // asserts exact claim counts, so start from an empty table.
+    await owner.query('DELETE FROM outbox_messages');
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -99,7 +102,6 @@ describe('Outbox (integration)', () => {
     if (owner?.isInitialized) {
       await owner.destroy();
     }
-    delete process.env.OUTBOX_RELAY_ENABLED;
   });
 
   it('persists an event and delivers it inline', async () => {

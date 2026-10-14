@@ -13,6 +13,8 @@ export default {
   // Boots a single PostGIS container for the whole run and stops it afterwards.
   globalSetup: '<rootDir>/test/integration/global-setup.ts',
   globalTeardown: '<rootDir>/test/integration/global-teardown.ts',
+  // Workers cannot inherit globalSetup's env; this pins the outbox relay off.
+  setupFiles: ['<rootDir>/test/integration/setup-env.ts'],
   // Pulling the PostGIS image the first time can take a while.
   testTimeout: 120000,
   // The suites share one database; running them serially keeps output readable.
