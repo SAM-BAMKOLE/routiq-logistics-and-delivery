@@ -1,6 +1,7 @@
 import 'reflect-metadata';
-import { plainToInstance, Type } from 'class-transformer';
+import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsIn,
   IsInt,
@@ -132,6 +133,54 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   APP_BASE_URL: string = 'http://localhost:5173';
+
+  /**
+   * Which `EventBus` adapter the messaging kernel binds. `outbox` persists
+   * every event before delivering it; `messaging` is the phase-1 in-process
+   * bus, useful when running without the outbox table.
+   */
+  @IsIn(['outbox', 'messaging'])
+  @IsOptional()
+  EVENT_BUS_ADAPTER: 'outbox' | 'messaging' = 'outbox';
+
+  /**
+   * The embedded outbox relay. On by default; tests that drive the relay
+   * explicitly set it to false so no background poll races their assertions.
+   */
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  @IsOptional()
+  OUTBOX_RELAY_ENABLED: boolean = true;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(100)
+  @Max(600_000)
+  @IsOptional()
+  OUTBOX_RELAY_INTERVAL_MS: number = 5_000;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1_000)
+  @IsOptional()
+  OUTBOX_RELAY_BATCH_SIZE: number = 25;
+
+  /** After this many failed attempts a row becomes terminal `failed`. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @IsOptional()
+  OUTBOX_MAX_ATTEMPTS: number = 8;
+
+  /** A `processing` row older than this may be reclaimed by another worker. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1_000)
+  @Max(3_600_000)
+  @IsOptional()
+  OUTBOX_LOCK_TIMEOUT_MS: number = 60_000;
 }
 
 export function validate(

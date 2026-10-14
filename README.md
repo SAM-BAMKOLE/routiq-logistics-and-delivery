@@ -27,7 +27,7 @@ self-hosted open-source services.
 | Phase | Scope | State |
 | --- | --- | --- |
 | **Phase 1** | Core API: scaffold, tenancy + RLS, identity/RBAC, shipments, pricing, dispatch, routing, tracking, notifications | 🚧 In progress |
-| **Phase 2** | Worker process, Redis, BullMQ, outbox pattern, dispatch saga | ⬜ Not started |
+| **Phase 2** | Outbox + embedded relay (done); Redis/BullMQ worker and dispatch saga (deferred) | 🚧 In progress |
 | **Phase 3** | Reporting, audit, observability, deployment and docs | ⬜ Not started |
 
 Progress is built one step at a time. See the roadmap in the architecture doc.

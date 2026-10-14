@@ -339,7 +339,7 @@ The schema has about 20 tables. All except `tenants` and `users` carry `tenant_i
 | `email_log` | id, tenant\_id, recipient, template, dedupe\_key, status, error, sent\_at | Feeds quota counting |
 | `audit_logs` | id, tenant\_id, actor\_id, action, entity\_type, entity\_id, diff (jsonb), occurred\_at | Append-only |
 | `idempotency_keys` | id, tenant\_id, key, request\_hash, response (jsonb), expires\_at | Unique (tenant\_id, key) |
-| `outbox_events` | id, tenant\_id, type, payload (jsonb), created\_at, published\_at, attempts | Added in phase 2 |
+| `outbox_messages` | id, tenant\_id (nullable), event\_type, event\_id (unique), envelope (jsonb), status, attempts, last\_error, available\_at, locked\_at, created\_at, processed\_at | Transactional outbox, global (no RLS) |
 
 **TypeORM notes**
 
@@ -577,29 +577,34 @@ Templates are Handlebars files in the repository, rendered with tenant branding 
 
 ## Eventing and async processing
 
-Phase 1 uses an in-process event bus. Phase 2 replaces it with the outbox pattern, BullMQ queues, and a separate worker process, without changing the domain code, because modules only depend on an event-bus port.
+Phase 1 uses an in-process event bus. Phase 2 puts a transactional outbox behind the same event-bus port, so no domain code changes. The zero-spend build embeds the relay in the API process; Redis, BullMQ, and the separate worker are the intended scale-up, described under **Queues** and **Worker process** below.
 
 **Event envelope**
 
 Every event carries `id`, `type`, `tenantId`, `occurredAt`, `aggregateType`, `aggregateId`, `aggregateVersion`, `correlationId`, `causationId`, and `payload`. The correlation ID follows a request through all downstream events and log lines.
 
-| Aspect | Phase 1 | Phase 2 |
+| Aspect | Phase 1 | Phase 2 (as built) |
 | --- | --- | --- |
-| Event bus | `@nestjs/event-emitter`, in process | Outbox table, relay, BullMQ |
-| Delivery guarantee | Best effort, lost if the process crashes | At least once |
-| Consumers | Listeners inside the API process | Queue processors in the worker |
-| Email | Sent in process | `email` queue with retries |
-| Route optimization | Thread pool inside the API process | Thread pool inside the worker |
-| Idempotency | Not needed | Consumers record processed event IDs |
+| Event bus | `@nestjs/event-emitter`, in process | `OutboxEventBus`: append to `outbox_messages`, then dispatch |
+| Delivery guarantee | Best effort, lost if the process crashes | At least once, retried with backoff |
+| Retry driver | None | Embedded `OutboxRelayService` (`FOR UPDATE SKIP LOCKED`) |
+| Consumers | Listeners inside the API process | The same listeners |
+| Email | Sent in process | Sent in process, deduplicated by `email_log.dedupe_key` |
+| Route optimization | Thread pool inside the API process | Floating in-process task (queue in the worker later) |
+| Idempotency | Not needed | Delivery and the `processed` flag commit atomically; side effects carry their own dedupe keys |
 
-**Outbox pattern (phase 2)**
+**Outbox pattern (as built)**
 
-1. A command handler changes the aggregate and inserts its events into `outbox_events` in the same database transaction.
-2. A relay in the worker reads unpublished rows with `FOR UPDATE SKIP LOCKED`, publishes each to BullMQ using the event ID as the job ID, and sets `published_at`.
-3. A consumer handles the job inside its own tenant transaction and inserts the event ID into a `processed_events` table. A unique key on consumer and event ID makes replays harmless. This table arrives with the outbox migration.
-4. Consumers tolerate out-of-order delivery by comparing `aggregateVersion` before applying a change.
+1. A command handler changes the aggregate; the `OutboxEventBus` adapter inserts the envelope into `outbox_messages` in the same database transaction, so the event exists if and only if the change commits.
+2. The same adapter dispatches the event in-process (the phase-1 fast path) and marks the row `processed`. A listener that throws records the attempt and leaves the row `pending`, without failing the request.
+3. `OutboxRelayService`, embedded in the API process, claims `pending` rows with `FOR UPDATE SKIP LOCKED` every `OUTBOX_RELAY_INTERVAL_MS`, redelivers them, and retries with exponential backoff up to `OUTBOX_MAX_ATTEMPTS`.
+4. Delivery and the `processed` flag share one transaction (tenant rows open a tenant transaction so listeners keep their RLS context), so a crash rolls back both and a redelivery starts from a clean slate. `event_id` is unique, so a replayed command is a no-op at the append.
+
+A separate consumer-dedupe table (`processed_events`) is not needed in this embedded design because the side effects, the row status, and the marker would commit atomically anyway. The BullMQ/worker variant adds one, since there the delivery and the acknowledgement are separate transactions and a worker can die between them.
 
 **Queues**
+
+Not in the zero-spend build: Redis and BullMQ are the scale-up, and the outbox relay already carries their shape. The table below is the target, not what runs today.
 
 | Queue | Producer | Processor | Settings |
 | --- | --- | --- | --- |
@@ -773,9 +778,9 @@ The build runs in three phases, and each ends at a gate that must pass before th
 6. Dispatch: manual assignment first, then PostGIS suggestions. (phase 1)
 7. Routing: matrix providers, savings construction, local search, annealing, and benchmarks. (phase 1)
 8. Tracking over WebSockets and proof of delivery. (phase 1)
-9. Redis, BullMQ, and the worker entrypoint. (phase 2)
-10. Outbox pattern with processed-event tracking. (phase 2)
-11. Move email, routing, and event handling onto queues, with retries and a dead-letter queue. (phase 2)
+9. Redis, BullMQ, and the worker entrypoint. (phase 2, deferred in the zero-spend build)
+10. Outbox pattern with an embedded relay. (done — processed-event tracking is folded into the delivery transaction)
+11. Move email, routing, and event handling onto queues, with retries and a dead-letter queue. (phase 2, deferred)
 12. Dispatch saga with offer timeouts and reassignment. (phase 2)
 13. Reporting read models, audit polish, metrics, health checks, and dashboards. (phase 3)
 14. ADRs, diagrams, seed data, a README with benchmark results, and the demo deployment. (phase 3)

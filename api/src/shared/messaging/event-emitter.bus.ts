@@ -2,21 +2,24 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ClsService } from 'nestjs-cls';
 import type { LdmsClsStore } from '../tenancy/tenant-context.js';
+import { correlate } from './correlate.js';
 import type { EventBus } from './event-bus.js';
 import type { DomainEventEnvelope } from './event-envelope.js';
 
 /**
- * Phase-1 event bus: `@nestjs/event-emitter`, in process.
+ * Phase-1 event bus: `@nestjs/event-emitter`, in process, with no durability.
  *
- * Two behaviors matter beyond plain emission:
+ * Retained as the fallback adapter (`EVENT_BUS_ADAPTER=messaging`): it is
+ * useful when running without the outbox table, and its tests pin the
+ * correlation and isolation behaviors that `OutboxEventBus` inherits.
  *
- * - **Correlation**: the envelope's `correlationId` is filled from the
- *   request id in CLS when the publisher does not set one, so one request
- *   can be traced through every event it caused.
- * - **Isolation**: a listener failure is logged and swallowed. Phase 1 is
- *   best-effort delivery by design — a notification problem must never roll
- *   back or fail the business request that raised the event. Phase 2 gives
- *   delivery at-least-once semantics through the outbox and BullMQ.
+ * - **Correlation**: `correlationId` is filled from the request id in CLS, so
+ *   one request can be traced through every event it caused.
+ * - **Isolation**: a listener failure is logged and swallowed. A notification
+ *   problem must never roll back or fail the business request that raised the
+ *   event.
+ *
+ * Unlike the outbox adapter, a failed delivery here is simply lost.
  */
 @Injectable()
 export class EventEmitterBus implements EventBus {
@@ -28,7 +31,7 @@ export class EventEmitterBus implements EventBus {
   ) {}
 
   async publish(event: DomainEventEnvelope): Promise<void> {
-    const correlated = this.correlate(event);
+    const correlated = correlate(event, this.cls);
     try {
       await this.emitter.emitAsync(correlated.type, correlated);
     } catch (error) {
@@ -43,13 +46,5 @@ export class EventEmitterBus implements EventBus {
     for (const event of events) {
       await this.publish(event);
     }
-  }
-
-  private correlate(event: DomainEventEnvelope): DomainEventEnvelope {
-    if (event.correlationId) {
-      return event;
-    }
-    const requestId = this.cls.get('requestId');
-    return requestId ? { ...event, correlationId: requestId } : event;
   }
 }

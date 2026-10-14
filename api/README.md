@@ -14,7 +14,7 @@ decisions live in [`../docs`](../docs) and the repo [README](../README.md).
 | Framework | NestJS 12 (strict TypeScript, ESM) |
 | Database | PostgreSQL + PostGIS (Docker locally, Neon/Supabase in the cloud) |
 | ORM | TypeORM (migrations only) |
-| Job queue | BullMQ + Redis *(phase 2)* |
+| Job queue | Deferred — embedded outbox relay + in-process tasks (Redis/BullMQ later) |
 | Realtime | Socket.IO *(phase 2)* |
 | Email | Nodemailer over Gmail SMTP behind an `EmailPort` |
 | Validation | `class-validator` / `class-transformer` |
@@ -384,13 +384,34 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
 
 ## Notifications and events
 
-- `shared/messaging/`: an in-process event bus. Services publish
-  `DomainEventEnvelope`s (id, type, tenant, aggregate + version,
-  correlation/causation ids, payload); the `EventEmitterBus` adapter fills
-  the correlation id from the request's `x-request-id` (or generates one)
-  and delivers through `@nestjs/event-emitter`. Listener failures are
-  logged, never surfaced to the raising request — phase 1 is best-effort
-  by design; phase 2 moves delivery to an outbox plus a queue.
+- `shared/messaging/`: a transactional outbox behind an `EventBus` port.
+  Services publish `DomainEventEnvelope`s (id, type, tenant, aggregate +
+  version, correlation/causation ids, payload) inside their tenant
+  transaction; the default `OutboxEventBus` adapter appends the envelope to
+  `outbox_messages` **and** dispatches it in-process through
+  `@nestjs/event-emitter`, so phase-1 synchronous delivery is preserved. The
+  append is idempotent per event id, so republishing an event is a no-op.
+- Because the row is written in the publisher's transaction, the event exists
+  if and only if the state change commits. A listener that throws leaves the
+  row `pending` with the attempt recorded — the raising request still
+  succeeds — and the embedded `OutboxRelayService`
+  (`modules/outbox/`) claims pending rows with `FOR UPDATE SKIP LOCKED`,
+  redelivers them, and retries with exponential backoff up to
+  `OUTBOX_MAX_ATTEMPTS`. Delivery and the `processed` flag share one
+  transaction (tenant rows open a tenant transaction, so listeners keep their
+  RLS context), so a crash rolls back both and a redelivery starts from a
+  clean slate rather than a half-applied one.
+- Listeners whose effects must be retried opt into error propagation with
+  `@OnEvent('<Type>', { suppressErrors: false })` — without it
+  `@nestjs/event-emitter` swallows the error and the bus never sees the
+  failure.
+- `EVENT_BUS_ADAPTER=outbox` (default) selects the outbox adapter;
+  `EVENT_BUS_ADAPTER=messaging` keeps the phase-1 `EventEmitterBus`.
+  `OUTBOX_RELAY_ENABLED=false` turns the relay off (tests),
+  `relayOnce()` drains one batch on demand, and the poll interval, batch
+  size, lock timeout and attempt cap are all environment variables (see
+  [`.env.example`](.env.example)). There is no Redis or BullMQ: the relay is
+  embedded in the API process, which is what the zero-spend deployment runs.
 - Events are published inside the tenant transaction, so listeners see
   the same RLS context as the writer. The email send therefore runs
   inside the request in phase 1 (documented tradeoff: SMTP latency lands

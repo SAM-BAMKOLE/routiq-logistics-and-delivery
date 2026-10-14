@@ -21,10 +21,12 @@ interface ShipmentStatusChangedPayload {
  * this listener a delivered shipment keeps its driver booked forever and the
  * fleet drains after a single run.
  *
- * Delivery is in-process and inside the publisher's tenant transaction, so
- * the repository reads and writes share the RLS context. A failure must never
- * fail the shipment transition that triggered it, so it is logged and
- * swallowed.
+ * Delivery runs inside the publisher's tenant transaction, so the repository
+ * reads and writes share the RLS context. A failure must never fail the
+ * shipment transition that triggered it, so the error is left to the event
+ * bus: it records the attempt and the outbox relay retries the delivery.
+ * `suppressErrors: false` is what makes the exception visible to the bus
+ * instead of being swallowed by the `@OnEvent` wrapper.
  */
 @Injectable()
 export class DispatchEventListener {
@@ -32,7 +34,7 @@ export class DispatchEventListener {
 
   constructor(private readonly dispatch: DispatchService) {}
 
-  @OnEvent('ShipmentStatusChanged')
+  @OnEvent('ShipmentStatusChanged', { suppressErrors: false })
   async onShipmentStatusChanged(
     event: DomainEventEnvelope<ShipmentStatusChangedPayload>,
   ): Promise<void> {
@@ -46,13 +48,7 @@ export class DispatchEventListener {
     ) {
       return;
     }
-    try {
-      await this.dispatch.completeTerminalShipment(event.tenantId, shipmentId);
-    } catch (error) {
-      this.logger.error(
-        { err: error, shipmentId, toStatus },
-        'failed to close the live assignment for a terminal shipment',
-      );
-    }
+    await this.dispatch.completeTerminalShipment(event.tenantId, shipmentId);
+    this.logger.debug({ shipmentId, toStatus }, 'terminal shipment released');
   }
 }

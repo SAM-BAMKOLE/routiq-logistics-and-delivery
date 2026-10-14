@@ -28,7 +28,7 @@ export class IdentityEmailsListener {
     private readonly config: ConfigService,
   ) {}
 
-  @OnEvent('UserInvited')
+  @OnEvent('UserInvited', { suppressErrors: false })
   async onInvited(event: DomainEventEnvelope): Promise<void> {
     const email = event.payload['email'];
     const inviteToken = event.payload['inviteToken'];
@@ -50,7 +50,7 @@ export class IdentityEmailsListener {
     });
   }
 
-  @OnEvent('PasswordResetRequested')
+  @OnEvent('PasswordResetRequested', { suppressErrors: false })
   async onPasswordReset(event: DomainEventEnvelope): Promise<void> {
     const email = event.payload['email'];
     const resetToken = event.payload['resetToken'];

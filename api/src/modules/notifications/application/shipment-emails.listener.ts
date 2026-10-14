@@ -33,7 +33,7 @@ export class ShipmentEmailsListener {
     private readonly customers: CustomersService,
   ) {}
 
-  @OnEvent('ShipmentConfirmed')
+  @OnEvent('ShipmentConfirmed', { suppressErrors: false })
   onConfirmed(event: DomainEventEnvelope): Promise<void> {
     return this.toCustomer(event, {
       template: 'shipment-confirmed',
@@ -41,7 +41,7 @@ export class ShipmentEmailsListener {
     });
   }
 
-  @OnEvent('ShipmentDelivered')
+  @OnEvent('ShipmentDelivered', { suppressErrors: false })
   onDelivered(event: DomainEventEnvelope): Promise<void> {
     return this.toCustomer(event, {
       template: 'delivered-receipt',
@@ -49,7 +49,7 @@ export class ShipmentEmailsListener {
     });
   }
 
-  @OnEvent('ShipmentFailed')
+  @OnEvent('ShipmentFailed', { suppressErrors: false })
   onFailed(event: DomainEventEnvelope): Promise<void> {
     return this.toCustomer(event, {
       template: 'failed-attempt',
@@ -58,7 +58,7 @@ export class ShipmentEmailsListener {
   }
 
   /** The two notification-worthy statuses riding on the generic event. */
-  @OnEvent('ShipmentStatusChanged')
+  @OnEvent('ShipmentStatusChanged', { suppressErrors: false })
   onStatusChanged(event: DomainEventEnvelope): Promise<void> | void {
     const toStatus = event.payload['toStatus'];
     if (toStatus === 'ASSIGNED') {

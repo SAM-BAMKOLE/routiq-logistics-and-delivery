@@ -20,5 +20,8 @@ process.env.JWT_ACCESS_SECRET = 'e2e-test-access-secret-min-32-chars-long';
 // Deterministic transport: the suites read delivered mail out of the
 // in-memory mailbox, never through SMTP.
 process.env.EMAIL_ADAPTER = 'memory';
+// e2e specs exercise the request path; the outbox relay is driven explicitly
+// by its own tests, so keep the background poller out of the way here.
+process.env.OUTBOX_RELAY_ENABLED = 'false';
 
 void state;

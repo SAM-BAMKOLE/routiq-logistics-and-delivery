@@ -26,7 +26,7 @@ export class OtpEmailsListener {
     private readonly tenants: TenantsService,
   ) {}
 
-  @OnEvent('ShipmentStatusChanged')
+  @OnEvent('ShipmentStatusChanged', { suppressErrors: false })
   async onStatusChanged(event: DomainEventEnvelope): Promise<void> {
     if (event.payload['toStatus'] !== 'OUT_FOR_DELIVERY') {
       return;

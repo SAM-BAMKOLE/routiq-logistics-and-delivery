@@ -27,9 +27,15 @@ import {
 // Deliberate exceptions: tables that carry a tenant reference but stay
 // global. `refresh_tokens` because platform sessions carry no tenant;
 // `email_log` because a password reset is logged before any tenant context
-// exists. Both have no cross-tenant read API — rows are bound by the
-// application layer (user, dedupe key).
-const GLOBAL_TABLES_WITH_TENANT_REF = ['refresh_tokens', 'email_log'];
+// exists; `outbox_messages` because an event can be global (password reset)
+// and because the relay must claim pending work across every tenant in one
+// query. All three have no tenant-facing read API — rows are bound by the
+// application layer (user, dedupe key, event id).
+const GLOBAL_TABLES_WITH_TENANT_REF = [
+  'refresh_tokens',
+  'email_log',
+  'outbox_messages',
+];
 describe('Tenant isolation across the schema (integration)', () => {
   let owner: DataSource;
   let app: DataSource;
