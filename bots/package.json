@@ -1,0 +1,19 @@
+{
+  "name": "@routiq/bots",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automated API consumers that simulate logistics companies, dispatchers and drivers using the Routiq API.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "simulate": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

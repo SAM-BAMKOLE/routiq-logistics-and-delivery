@@ -36,12 +36,17 @@ Progress is built one step at a time. See the roadmap in the architecture doc.
 
 ```text
 routiq/
-  api/               # the NestJS API (this phase)
+  api/               # NestJS backend (single pnpm package)
+  web/               # Next.js operator console (single pnpm package)
+  bots/              # dummy logistics companies driving the public API
   docs/              # architecture, ADRs, diagrams
     architecture.md
-  docker-compose.yml # local Postgres+PostGIS, Redis, Mailpit
-  .github/workflows/ # CI
+  docker-compose.yml # local Postgres+PostGIS
+  .github/workflows/ # CI + keep-alive
 ```
+
+Each package has its own `pnpm-lock.yaml` and is installed separately; there is
+no workspace root.
 
 ## Getting started
 
@@ -50,10 +55,36 @@ docker compose up -d          # backing services
 cd api
 pnpm install
 cp .env.example .env
+pnpm db:migrate
+pnpm db:seed:demo             # optional demo tenants + manifest for bots/
 pnpm start:dev
 ```
 
 Then open <http://localhost:3000/docs> for the OpenAPI docs.
+
+### Operator console
+
+```bash
+cd web
+pnpm install
+cp .env.example .env.local
+pnpm dev
+```
+
+See [`web/README.md`](web/README.md) for routes and demo accounts. If the API
+already holds port `3000`, the console lands on `3001` — keep that origin in
+the API's `CORS_ORIGINS`.
+
+### Simulated customers
+
+```bash
+cd api && pnpm db:seed:demo   # writes api/.demo-seed.json
+cd ../bots
+pnpm install
+pnpm simulate                 # drive real shipments through the HTTP API
+```
+
+See [`bots/README.md`](bots/README.md) for scenarios and flags.
 
 ## Documentation
 
