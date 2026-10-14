@@ -246,6 +246,26 @@ describe('Dispatch (integration)', () => {
       expect(ids).toContain(driverBusyId);
     });
 
+    it('never suggests a vehicle that a live assignment already holds', async () => {
+      // driverBusy holds driverNear's own van: driverNear is free but their
+      // own vehicle is not, so the candidate row must fall through to a free
+      // vehicle instead of echoing the held one back.
+      const holder = await offer(mainShipmentId, driverBusyId, { vehicleId: vanId });
+
+      const probe = await insertConfirmedShipment();
+      const ranked = await transactions.runWithTenant(tenantA, () =>
+        dispatch.candidates(dispatcher, tenantA, probe),
+      );
+      const near = ranked.find((candidate) => candidate.driverId === driverNearId);
+      expect(near).toBeDefined();
+      expect(near?.vehicleId).not.toBe(vanId);
+      expect(near?.vehicleId).toBe(spareVanId);
+
+      await transactions.runWithTenant(tenantA, () =>
+        dispatch.cancel(dispatcher, tenantA, holder.id, null),
+      );
+    });
+
     it('hides other tenants’ shipments behind 404', async () => {
       await expect(
         transactions.runWithTenant(tenantB, () =>
@@ -320,6 +340,35 @@ describe('Dispatch (integration)', () => {
         dispatch.listMine(tenantA, driverFarUserId),
       );
       expect(list.find((row) => row.id === assignment.id)?.status).toBe('expired');
+    });
+
+    it('frees the driver and the vehicle once the shipment is closed out', async () => {
+      const shipmentId = await insertConfirmedShipment();
+      const assignment = await offer(shipmentId, driverFarId, {
+        vehicleId: spareVanId,
+      });
+      await transactions.runWithTenant(tenantA, () =>
+        dispatch.accept(tenantA, driverFarUserId, assignment.id),
+      );
+
+      await transactions.runWithTenant(tenantA, () =>
+        dispatch.completeTerminalShipment(tenantA, shipmentId),
+      );
+
+      const mine = await transactions.runWithTenant(tenantA, () =>
+        dispatch.listMine(tenantA, driverFarUserId),
+      );
+      expect(mine.find((row) => row.id === assignment.id)?.status).toBe('completed');
+
+      // The pair is dispatchable again on a fresh shipment.
+      const nextShipment = await insertConfirmedShipment();
+      const reoffered = await offer(nextShipment, driverFarId, {
+        vehicleId: spareVanId,
+      });
+      expect(reoffered.status).toBe('offered');
+      await transactions.runWithTenant(tenantA, () =>
+        dispatch.cancel(dispatcher, tenantA, reoffered.id, null),
+      );
     });
 
     it('turns concurrent double-offers into named conflicts', async () => {

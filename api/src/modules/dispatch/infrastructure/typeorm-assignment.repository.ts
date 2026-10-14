@@ -56,6 +56,18 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
     return entity ? toDomain(entity) : null;
   }
 
+  async findLiveByShipment(shipmentId: string): Promise<Assignment[]> {
+    const entities = await this.manager()
+      .getRepository(AssignmentOrmEntity)
+      .createQueryBuilder('assignment')
+      .where('assignment.shipment_id = :shipmentId', { shipmentId })
+      .andWhere('assignment.status IN (:...statuses)', {
+        statuses: ['offered', 'accepted'],
+      })
+      .getMany();
+    return entities.map(toDomain);
+  }
+
   async listByDriver(driverId: string): Promise<Assignment[]> {
     const entities = await this.manager().find(AssignmentOrmEntity, {
       where: { driverId },
@@ -83,9 +95,10 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
    * - `loc` is the driver's newest known position (Step 10 fills this table;
    *   until then every candidate is unlocated and proximity degrades to the
    *   strategy's load ranking, which is why distance is nullable).
-   * - `own_fit` suggests the driver's own vehicle when it is active and
-   *   fits the shipment's weight and volume; `free_fit` picks the smallest
-   *   adequate vehicle nobody is driving right now.
+   * - `own_fit` suggests the driver's own vehicle when it is active, fits the
+   *   shipment's weight and volume, and is not already held by a live
+   *   assignment; `free_fit` picks the smallest adequate vehicle nobody is
+   *   driving right now.
    * - The WHERE clause is the eligibility filter: active and available, no
    *   live assignment, on shift or without a schedule, and at least one free
    *   vehicle in the tenant that fits. Distance and slack are computed but
@@ -138,6 +151,10 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
            AND (
              v.capacity_volume_m3 IS NULL OR $4::double precision IS NULL
              OR v.capacity_volume_m3 >= $4::double precision
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM dispatch_assignments da
+              WHERE da.vehicle_id = v.id AND da.status IN ('offered', 'accepted')
            )
       ) own_fit ON TRUE
       LEFT JOIN LATERAL (

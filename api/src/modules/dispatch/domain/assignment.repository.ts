@@ -41,6 +41,8 @@ export interface AssignmentRepository {
   /** Persists the aggregate's current state after a transition. */
   save(assignment: Assignment): Promise<void>;
   findById(id: string): Promise<Assignment | null>;
+  /** The shipment's live (offered or accepted) assignments. */
+  findLiveByShipment(shipmentId: string): Promise<Assignment[]>;
   /** The driver's assignments, newest offers first. */
   listByDriver(driverId: string): Promise<Assignment[]>;
   /** Every offer in the tenant whose TTL has passed, still as `offered`

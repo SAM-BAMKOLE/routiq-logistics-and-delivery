@@ -317,6 +317,39 @@ export class DispatchService {
     return assignment;
   }
 
+  /**
+   * Closes the live assignment for a shipment that reached a terminal status
+   * (delivered, returned, cancelled). An accepted run becomes `completed`; an
+   * offer still pending is withdrawn. Either way the row leaves the
+   * `offered`/`accepted` set the live partial unique indexes cover, so the
+   * driver and the vehicle become dispatchable again. Called from the
+   * `ShipmentStatusChanged` listener; there is no HTTP entry point.
+   */
+  async completeTerminalShipment(
+    tenantId: string,
+    shipmentId: string,
+  ): Promise<void> {
+    const live = await this.assignments.findLiveByShipment(shipmentId);
+    for (const assignment of live) {
+      try {
+        if (assignment.status === 'accepted') {
+          assignment.complete();
+        } else {
+          assignment.cancel('the shipment reached a terminal status');
+        }
+      } catch {
+        // Another writer already closed it; nothing left to do for this row.
+        continue;
+      }
+      await this.assignments.save(assignment);
+      await this.publishEvents(assignment);
+      this.logger.debug(
+        { assignmentId: assignment.id, shipmentId },
+        'dispatch assignment closed on terminal shipment',
+      );
+    }
+  }
+
   // ---------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------

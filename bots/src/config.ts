@@ -15,12 +15,20 @@ export interface SeededCustomer {
   addresses: SeededAddress[];
 }
 
+export interface SeededVehicle {
+  plate: string;
+  type: string;
+  capacityWeightKg: number;
+  capacityVolumeM3: number | null;
+}
+
 export interface SeededCompany {
   slug: string;
   name: string;
   admin: { email: string };
   dispatcher: { email: string };
   drivers: Array<{ email: string; licenseNo: string }>;
+  vehicles?: SeededVehicle[];
   customers: SeededCustomer[];
 }
 

@@ -117,12 +117,35 @@ describe('Assignment aggregate', () => {
     expect(accepted.isLive).toBe(false);
   });
 
+  it('completes an accepted job: terminal, not live, raises AssignmentCompleted', () => {
+    const assignment = offer();
+    assignment.accept();
+    assignment.pullDomainEvents();
+
+    assignment.complete();
+
+    expect(assignment.status).toBe('completed');
+    expect(assignment.isLive).toBe(false);
+    expect(assignment.respondedAt).toBeInstanceOf(Date);
+
+    const events = assignment.pullDomainEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('AssignmentCompleted');
+    expect(events[0].payload).toMatchObject({
+      assignmentId: 'as-1',
+      shipmentId: 's-1',
+    });
+  });
+
   it('guards the lifecycle: terminal assignments cannot move', () => {
     const rejected = offer();
     rejected.reject();
     expectDomainError(() => rejected.accept(), 'ASSIGNMENT_NOT_OFFERED');
     expectDomainError(() => rejected.expire(), 'ASSIGNMENT_NOT_OFFERED');
     expectDomainError(() => rejected.cancel(), 'ASSIGNMENT_NOT_LIVE');
+
+    const pending = offer();
+    expectDomainError(() => pending.complete(), 'ASSIGNMENT_NOT_ACCEPTED');
 
     const accepted = offer();
     accepted.accept();

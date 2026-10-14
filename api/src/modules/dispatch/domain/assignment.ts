@@ -5,7 +5,7 @@
  *
  * The lifecycle (architecture, "Dispatch and driver assignment"):
  *
- *     offered ──accept──▶ accepted ──cancel──▶ cancelled (shipment released)
+ *     offered ──accept──▶ accepted ──complete──▶ completed (shipment done)
  *        │                  │
  *        ├─reject──▶ rejected          expired: the offer outlived its TTL
  *        ├─expire──▶ expired           (lazily realised; the phase-2 queue
@@ -14,11 +14,13 @@
  * `offered` and `accepted` are the *live* statuses: they hold both the
  * shipment and the driver, and the database enforces "one live assignment
  * per shipment and per driver" with partial unique indexes, so two
- * concurrent dispatch runs cannot double-book either side.
+ * concurrent dispatch runs cannot double-book either side. `completed` is
+ * terminal and frees both sides once the shipment is delivered.
  */
 export const ASSIGNMENT_STATUSES = [
   'offered',
   'accepted',
+  'completed',
   'rejected',
   'expired',
   'cancelled',
@@ -58,6 +60,7 @@ export class AssignmentDomainError extends Error {
 export type AssignmentEventType =
   | 'AssignmentOffered'
   | 'DriverAssigned'
+  | 'AssignmentCompleted'
   | 'AssignmentRejected'
   | 'AssignmentExpired'
   | 'AssignmentCancelled';
@@ -209,6 +212,25 @@ export class Assignment {
     });
   }
 
+  /**
+   * accepted to completed: the shipment reached a terminal state (delivered,
+   * returned, cancelled). Terminal, so the partial unique indexes release the
+   * driver and the vehicle. Unlike {@link cancel} it does not touch the
+   * shipment — the caller already moved it.
+   */
+  complete(): void {
+    this.ensureAccepted('complete');
+    const now = new Date();
+    this.currentStatus = 'completed';
+    this.currentRespondedAt = now;
+    this.currentUpdatedAt = now;
+    this.eventQueue.push({
+      type: 'AssignmentCompleted',
+      occurredAt: now,
+      payload: this.basePayload(),
+    });
+  }
+
   /** offered to rejected: the driver passed; the shipment stays CONFIRMED. */
   reject(reason: string | null = null): void {
     this.ensureOffered('reject');
@@ -263,6 +285,15 @@ export class Assignment {
     if (this.currentStatus !== 'offered') {
       throw new AssignmentDomainError(
         'ASSIGNMENT_NOT_OFFERED',
+        `An assignment in status ${this.currentStatus} cannot be ${action}ed.`,
+      );
+    }
+  }
+
+  private ensureAccepted(action: string): void {
+    if (this.currentStatus !== 'accepted') {
+      throw new AssignmentDomainError(
+        'ASSIGNMENT_NOT_ACCEPTED',
         `An assignment in status ${this.currentStatus} cannot be ${action}ed.`,
       );
     }

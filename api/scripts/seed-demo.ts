@@ -270,6 +270,7 @@ interface SeedManifest {
     admin: { email: string };
     dispatcher: { email: string };
     drivers: Array<{ email: string; licenseNo: string }>;
+    vehicles: Array<{ plate: string; type: string; capacityWeightKg: number; capacityVolumeM3: number | null }>;
     customers: Array<{ id: string; name: string; addresses: Array<{ id: string; label: string; city: string; lat: number; lng: number }> }>;
   }>;
 }
@@ -514,6 +515,22 @@ try {
     // when connected as a role that does not bypass RLS.
     await q(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 
+    // Close live assignments whose shipment already finished. The API now does
+    // this on the shipment's terminal event; this repairs rows written before
+    // that fix so re-running the demo can dispatch the fleet again.
+    await q(
+      `UPDATE dispatch_assignments da
+          SET status = CASE WHEN da.status = 'accepted' THEN 'completed' ELSE 'cancelled' END,
+              responded_at = COALESCE(da.responded_at, now()),
+              updated_at = now()
+         FROM shipments s
+        WHERE da.shipment_id = s.id
+          AND da.tenant_id = $1
+          AND da.status IN ('offered', 'accepted')
+          AND s.status IN ('DELIVERED', 'CANCELLED', 'RETURNED')`,
+      [tenantId],
+    );
+
     const adminId = await upsertUser(company.admin.email, company.admin.name);
     await upsertMembership(tenantId, adminId, 'tenant_admin');
 
@@ -522,8 +539,15 @@ try {
 
     // Vehicles, then drivers bound to them.
     const vehicleIds: string[] = [];
+    const vehicleManifest: Array<{ plate: string; type: string; capacityWeightKg: number; capacityVolumeM3: number | null }> = [];
     for (const vehicle of company.vehicles) {
       vehicleIds.push(await upsertVehicle(tenantId, vehicle));
+      vehicleManifest.push({
+        plate: vehicle.plate,
+        type: vehicle.type,
+        capacityWeightKg: vehicle.weightKg,
+        capacityVolumeM3: vehicle.volumeM3,
+      });
     }
 
     const driverManifest: Array<{ email: string; licenseNo: string }> = [];
@@ -564,6 +588,7 @@ try {
       admin: { email: company.admin.email },
       dispatcher: { email: company.dispatcher.email },
       drivers: driverManifest,
+      vehicles: vehicleManifest,
       customers: customerManifest,
     });
 

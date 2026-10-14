@@ -121,6 +121,10 @@ function makeHarness(): Harness {
       harness.store.set(assignment.id, assignment);
     },
     findById: async (id) => harness.store.get(id) ?? null,
+    findLiveByShipment: async (shipmentId) =>
+      [...harness.store.values()].filter(
+        (assignment) => assignment.shipmentId === shipmentId && assignment.isLive,
+      ),
     listByDriver: async (driverId) =>
       [...harness.store.values()].filter(
         (assignment) => assignment.driverId === driverId,
@@ -506,6 +510,53 @@ describe('DispatchService', () => {
       expect(h.store.get('as-1')?.status).toBe('cancelled');
       expect(h.bus.types()).toContain('AssignmentOffered');
       expect(h.bus.types()).toContain('AssignmentCancelled');
+    });
+  });
+
+  describe('completeTerminalShipment', () => {
+    it('completes an accepted assignment and frees the driver', async () => {
+      const h = makeHarness();
+      await offer(h, { id: 'as-1', vehicleId: 'v-own' });
+      await h.service.accept('t-1', 'u-driver', 'as-1');
+      h.bus.clear();
+
+      await h.service.completeTerminalShipment('t-1', 's-1');
+
+      expect(h.store.get('as-1')?.status).toBe('completed');
+      expect(h.bus.types()).toEqual(['AssignmentCompleted']);
+      // Completing never moves the shipment; the caller already did.
+      expect(h.released).toEqual([]);
+
+      // The driver is free for the next job on a different shipment.
+      h.shipments.set('s-2', {
+        id: 's-2',
+        tenantId: 't-1',
+        status: 'CONFIRMED',
+        pickupAddressId: 'a-1',
+        weightKg: 100,
+        volumeM3: 2,
+      } as unknown as Shipment);
+      const next = await h.service.create(dispatcher, 't-1', 's-2', {
+        driverId: 'd-1',
+      });
+      expect(next.status).toBe('offered');
+    });
+
+    it('withdraws an offer that was still pending', async () => {
+      const h = makeHarness();
+      await offer(h, { id: 'as-1' });
+      h.bus.clear();
+
+      await h.service.completeTerminalShipment('t-1', 's-1');
+
+      expect(h.store.get('as-1')?.status).toBe('cancelled');
+      expect(h.bus.types()).toEqual(['AssignmentCancelled']);
+    });
+
+    it('is a no-op when nothing is live', async () => {
+      const h = makeHarness();
+      await h.service.completeTerminalShipment('t-1', 's-1');
+      expect(h.bus.types()).toEqual([]);
     });
   });
 

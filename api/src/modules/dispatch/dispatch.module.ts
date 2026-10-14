@@ -6,6 +6,7 @@ import { IdentityModule } from '../identity/identity.module.js';
 import { ShipmentsModule } from '../shipments/shipments.module.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
 import { DispatchService } from './application/dispatch.service.js';
+import { DispatchEventListener } from './application/dispatch-events.listener.js';
 import { ASSIGNMENT_REPOSITORY } from './domain/assignment.repository.js';
 import { AssignmentOrmEntity } from './infrastructure/assignment.orm-entity.js';
 import { TypeOrmAssignmentRepository } from './infrastructure/typeorm-assignment.repository.js';
@@ -31,6 +32,7 @@ import { DispatchController } from './presentation/dispatch.controller.js';
   controllers: [DispatchController],
   providers: [
     DispatchService,
+    DispatchEventListener,
     TypeOrmAssignmentRepository,
     { provide: ASSIGNMENT_REPOSITORY, useClass: TypeOrmAssignmentRepository },
   ],
