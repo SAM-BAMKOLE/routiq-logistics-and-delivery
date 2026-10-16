@@ -50,7 +50,9 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  CORS_ORIGINS: string = 'http://localhost:5173';
+  CORS_ORIGINS: string =
+    'http://localhost:3000,http://localhost:3001,http://localhost:5173,' +
+    'https://routiq-logistics-and-delivery.vercel.app';
 
   /**
    * Runtime database connection. On Neon this is the pooled host. Migrations
