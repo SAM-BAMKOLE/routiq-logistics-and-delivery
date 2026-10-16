@@ -4,10 +4,12 @@ name: Simulate bots
 # independent run, so a failure on one (e.g. a sleeping host) never stops the
 # next one — the bots warm the API up and retry transient failures.
 #
-# Required configuration (repository settings):
-#   Variable  ROUTIQ_API_URL              e.g. https://routiq.example.com/api/v1
-#   Secret    ROUTIQ_SEED_MANIFEST_JSON   the contents of api/.demo-seed.json
-#   Secret    ROUTIQ_DEMO_PASSWORD        demo password (default Passw0rd!demo)
+# Required configuration (repository settings). Each value may be set as either
+# a repository secret or a repository variable; a secret is preferred but a
+# variable works too, and the step below reports anything that is missing.
+#   ROUTIQ_SEED_MANIFEST_JSON   the contents of api/.demo-seed.json  (required)
+#   ROUTIQ_API_URL              e.g. https://routiq.example.com/api/v1
+#   ROUTIQ_DEMO_PASSWORD        demo password (default Passw0rd!demo)
 
 on:
   schedule:
@@ -53,12 +55,28 @@ jobs:
         working-directory: bots
         run: pnpm install --frozen-lockfile
 
+      - name: Check bot configuration
+        env:
+          MANIFEST_JSON: ${{ secrets.ROUTIQ_SEED_MANIFEST_JSON || vars.ROUTIQ_SEED_MANIFEST_JSON }}
+          API_URL: ${{ vars.ROUTIQ_API_URL || secrets.ROUTIQ_API_URL }}
+        run: |
+          if [ -z "$MANIFEST_JSON" ]; then
+            echo "::error title=Missing ROUTIQ_SEED_MANIFEST_JSON::Set the repository secret (or variable) ROUTIQ_SEED_MANIFEST_JSON to the contents of api/.demo-seed.json. Generate it with 'pnpm db:seed:demo' in the api package."
+            exit 1
+          fi
+          echo "Seed manifest provided (${#MANIFEST_JSON} bytes)."
+          if [ -z "$API_URL" ]; then
+            echo "::warning title=Missing ROUTIQ_API_URL::No API URL configured; falling back to the manifest's apiBaseUrl."
+          else
+            echo "Target API: $API_URL"
+          fi
+
       - name: Run the bot fleet
         working-directory: bots
         env:
-          ROUTIQ_API_URL: ${{ vars.ROUTIQ_API_URL }}
-          ROUTIQ_SEED_MANIFEST_JSON: ${{ secrets.ROUTIQ_SEED_MANIFEST_JSON }}
-          ROUTIQ_DEMO_PASSWORD: ${{ secrets.ROUTIQ_DEMO_PASSWORD }}
+          ROUTIQ_API_URL: ${{ vars.ROUTIQ_API_URL || secrets.ROUTIQ_API_URL }}
+          ROUTIQ_SEED_MANIFEST_JSON: ${{ secrets.ROUTIQ_SEED_MANIFEST_JSON || vars.ROUTIQ_SEED_MANIFEST_JSON }}
+          ROUTIQ_DEMO_PASSWORD: ${{ secrets.ROUTIQ_DEMO_PASSWORD || vars.ROUTIQ_DEMO_PASSWORD }}
           # Wait up to 5 minutes for a sleeping host to boot, then start.
           ROUTIQ_BOT_WARMUP_SECONDS: '300'
           # Retry each transient request (cold start, gateway, throttling).
