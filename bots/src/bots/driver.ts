@@ -4,6 +4,19 @@ import { Logger, sleep } from '../logger.js';
 import type { Assignment, Shipment } from '../types.js';
 
 /**
+ * How a driver's run ends. `deliver` is the happy path; `recover` fails the
+ * first attempt and then retries successfully; `return` fails and leaves the
+ * shipment for the dispatcher to close out as RETURNED.
+ */
+export type DeliveryOutcome = 'deliver' | 'recover' | 'return';
+
+/** Plausible reasons for a failed attempt, one per failure outcome. */
+const FAILURE_REASONS: Record<Exclude<DeliveryOutcome, 'deliver'>, string> = {
+  recover: 'Nobody at the delivery address; returning later',
+  return: 'Customer unreachable after repeated attempts',
+};
+
+/**
  * DriverAgent behaves like a driver's mobile app: it waits for an offer,
  * accepts it, drives the shipment through its status machine while streaming
  * GPS, captures proof of delivery, then completes the shipment.
@@ -24,15 +37,22 @@ export class DriverAgent {
     this.client = new RoutiqClient(baseUrl, this.log);
   }
 
-  async connect(): Promise<void> {
+  /**
+   * Signs in and sets this driver's availability. Going on shift also returns
+   * the driver profile, which is how the bot learns its own driver id (offers
+   * carry driver ids, not e-mails). Drivers the rota keeps off duty are set
+   * `unavailable` so dispatch can only offer the job to the one on shift.
+   */
+  async connect(availability: 'available' | 'unavailable' = 'available'): Promise<void> {
     const auth = await this.client.login(this.email, this.password);
-    // Going on shift returns the driver profile, which is how the bot learns
-    // its own driver id (the offer carries driver ids, not e-mails).
     const driver = await this.client.patch<{ id: string }>('/drivers/me/availability', {
-      availability: 'available',
+      availability,
     });
     this.driverId = driver.id;
-    this.log.ok('on shift', `role=${auth.tenant?.role ?? 'n/a'} driver=${driver.id.slice(0, 8)}`);
+    this.log.ok(
+      availability === 'available' ? 'on shift' : 'off shift',
+      `role=${auth.tenant?.role ?? 'n/a'} driver=${driver.id.slice(0, 8)}`,
+    );
   }
 
   /** Polls for an offered assignment targeting the given shipment. */
@@ -92,16 +112,56 @@ export class DriverAgent {
     return next;
   }
 
-  /** Drives one assigned shipment all the way to DELIVERED. */
+  /** OUT_FOR_DELIVERY to FAILED_ATTEMPT: a failed attempt with a reason code. */
+  async fail(shipment: Shipment, reason: string): Promise<Shipment> {
+    const failed = await this.client.post<Shipment>(
+      `/shipments/${shipment.id}/fail`,
+      { reason },
+      { ifMatch: shipment.version },
+    );
+    this.log.warn(`failed attempt`, `${shipment.status} → ${failed.status} (${reason})`);
+    return failed;
+  }
+
+  /** FAILED_ATTEMPT back to OUT_FOR_DELIVERY, when the attempt budget allows. */
+  async retry(shipment: Shipment): Promise<Shipment> {
+    const next = await this.client.post<Shipment>(
+      `/shipments/${shipment.id}/retry`,
+      undefined,
+      { ifMatch: shipment.version },
+    );
+    this.log.info(`retrying`, `${shipment.status} → ${next.status}`);
+    return next;
+  }
+
+  /**
+   * Drives one assigned shipment along its route. The happy path runs
+   * `pickup → in transit → GPS → out for delivery → proof → delivered`. With a
+   * failure outcome the driver records a failed attempt at out-for-delivery
+   * and either retries to success (`recover`) or hands the FAILED_ATTEMPT
+   * shipment back for the dispatcher to close out (`return`).
+   */
   async completeDelivery(
     assigned: Shipment,
     from: SeededAddress,
     to: SeededAddress,
+    outcome: DeliveryOutcome = 'deliver',
   ): Promise<Shipment> {
     let shipment = await this.transition(assigned, 'pickup');
     shipment = await this.transition(shipment, 'start-transit');
     await this.pushTrace(from, to);
     shipment = await this.transition(shipment, 'start-delivery');
+
+    if (outcome !== 'deliver') {
+      shipment = await this.fail(shipment, FAILURE_REASONS[outcome]);
+      if (outcome === 'return') {
+        // The dispatcher owns the final RETURNED transition; hand the shipment
+        // back at FAILED_ATTEMPT.
+        return shipment;
+      }
+      shipment = await this.retry(shipment);
+    }
+
     await this.captureProof(shipment.id, 'Front desk');
     const delivered = await this.transition(shipment, 'deliver');
     this.log.ok(`delivered ${delivered.trackingNumber}`);

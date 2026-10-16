@@ -77,4 +77,18 @@ export class DispatcherAgent {
     );
     this.log.info('submitted route plan', `id=${plan.id.slice(0, 8)} status=${plan.status}`);
   }
+
+  /**
+   * Closes out a failed shipment as RETURNED. Only dispatchers and admins hold
+   * `shipments:update`, so the driver's bot cannot do this itself.
+   */
+  async returnShipment(shipment: Shipment, reason: string): Promise<Shipment> {
+    const returned = await this.client.post<Shipment>(
+      `/shipments/${shipment.id}/return`,
+      { reason },
+      { ifMatch: shipment.version },
+    );
+    this.log.warn(`returned ${returned.trackingNumber}`, `${shipment.status} → ${returned.status}`);
+    return returned;
+  }
 }

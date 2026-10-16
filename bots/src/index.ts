@@ -19,6 +19,9 @@ const { values } = parseArgs({
     interval: { type: 'string' },
     warmup: { type: 'string' },
     parallel: { type: 'boolean' },
+    'failure-rate': { type: 'string' },
+    'return-rate': { type: 'string' },
+    'rotation-offset': { type: 'string' },
   },
 });
 
@@ -38,7 +41,11 @@ const warmupSeconds = Math.max(
 );
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const config = loadConfig({
+    failureRate: optionalRate(values['failure-rate']),
+    returnRate: optionalRate(values['return-rate']),
+    rotationOffset: optionalInt(values['rotation-offset']),
+  });
   const log = new Logger('routiq-bots', 'magenta');
 
   const wanted = values.companies
@@ -60,6 +67,10 @@ async function main(): Promise<void> {
   log.info(
     `companies: ${companies.map((c) => c.slug).join(', ')}`,
     `${infinite ? 'looping' : `${roundsArg} round(s)`}, ${companies.reduce((n, c) => n + c.drivers.length, 0)} drivers`,
+  );
+  log.info(
+    'failure simulation',
+    `failureRate=${config.failureRate} returnRate=${config.returnRate} rotationOffset=${config.rotationOffset}`,
   );
 
   let stopped = false;
@@ -139,14 +150,34 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Parses an optional 0..1 CLI rate; `undefined` when the flag is absent. */
+function optionalRate(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : undefined;
+}
+
+/** Parses an optional non-negative integer CLI flag; `undefined` when absent. */
+function optionalInt(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
 function printSummary(results: ScenarioResult[], log: Logger): void {
   const passed = results.filter((r) => r.ok).length;
+  const delivered = results.filter((r) => r.status === 'DELIVERED').length;
+  const returned = results.filter((r) => r.status === 'RETURNED').length;
   console.log('');
-  log.info(`summary: ${passed}/${results.length} shipments delivered`);
+  log.info(
+    `summary: ${passed}/${results.length} lifecycles completed`,
+    `${delivered} delivered · ${returned} returned`,
+  );
   for (const result of results) {
     const icon = result.ok ? '✓' : '✗';
+    const outcome = result.outcome ? ` [${result.outcome}]` : '';
     const detail = result.error ? ` (${result.error})` : ` ${result.trackingNumber ?? ''}`;
-    console.log(`   ${icon} ${result.company} [round ${result.round}] → ${result.status}${detail}`);
+    console.log(`   ${icon} ${result.company} [round ${result.round}] → ${result.status}${outcome}${detail}`);
   }
 }
 

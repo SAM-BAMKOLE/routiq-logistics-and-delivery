@@ -81,6 +81,10 @@ jobs:
           ROUTIQ_BOT_WARMUP_SECONDS: '300'
           # Retry each transient request (cold start, gateway, throttling).
           ROUTIQ_BOT_HTTP_RETRIES: '6'
+          # Failure simulation: override these repository variables to tune how
+          # often shipments hit a failed attempt / end RETURNED (0 = all green).
+          ROUTIQ_BOT_FAILURE_RATE: ${{ vars.ROUTIQ_BOT_FAILURE_RATE || '0.25' }}
+          ROUTIQ_BOT_RETURN_RATE: ${{ vars.ROUTIQ_BOT_RETURN_RATE || '0.1' }}
         run: |
           ARGS="--rounds ${{ github.event.inputs.rounds || '1' }}"
           if [ -n "${{ github.event.inputs.companies }}" ]; then

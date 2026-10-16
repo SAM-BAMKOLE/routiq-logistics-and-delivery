@@ -6,7 +6,8 @@ control and `application/problem+json` errors. No database shortcuts.
 
 They give the API something to do: every run books a real shipment, dispatches
 it, streams GPS from a driver, captures proof of delivery and completes the
-delivery.
+delivery — or, a fraction of the time, records a failed attempt and closes the
+shipment out as returned, so the failure paths are exercised too.
 
 ## Prerequisites
 
@@ -23,6 +24,9 @@ pnpm simulate --rounds 5          # five rounds, 15s apart
 pnpm simulate --companies acme-logistics
 pnpm simulate --rounds 0          # loop until Ctrl+C
 pnpm simulate --parallel          # run companies concurrently
+pnpm simulate --failure-rate 0    # all-green run (no failed attempts)
+pnpm simulate --return-rate 0.5   # half of shipments end RETURNED
+pnpm simulate --rotation-offset 1 # pin which driver is on shift (tests)
 ```
 
 ## What each bot does
@@ -30,8 +34,26 @@ pnpm simulate --parallel          # run companies concurrently
 | Bot | Identity | Actions |
 | --- | --- | --- |
 | **CompanyAgent** | tenant admin | quotes a lane, books a shipment, confirms it |
-| **DispatcherAgent** | dispatcher | lists confirmed shipments, reads dispatch candidates, offers the job to the closest driver |
-| **DriverAgent** | driver | goes on shift, accepts the offer, advances the shipment `PICKED_UP → IN_TRANSIT → OUT_FOR_DELIVERY`, streams GPS, captures photo proof, delivers |
+| **DispatcherAgent** | dispatcher | lists confirmed shipments, reads dispatch candidates, offers the job to the closest driver, closes a failed shipment as RETURNED |
+| **DriverAgent** | driver | goes on shift, accepts the offer, advances the shipment `PICKED_UP → IN_TRANSIT → OUT_FOR_DELIVERY`, streams GPS, captures photo proof, delivers — or records a failed attempt |
+
+### Driver rotation
+
+Each round puts exactly one of a company's drivers on shift (the rest are set
+`unavailable`) and rotates by round. The starting driver advances with the
+clock — one step per `ROUTIQ_BOT_ROTATION_WINDOW_MINUTES` (default 30 min) — so
+even a single-round scheduled tick keeps spreading work across the fleet.
+Without this, every seeded driver ties on distance (no GPS yet) and dispatch
+hands every shipment to the same lowest-id driver, leaving the others empty.
+
+### Failure simulation
+
+`ROUTIQ_BOT_FAILURE_RATE` (default `0.25`) is the chance a shipment hits a
+failed attempt at out-for-delivery. Most failures then retry and deliver;
+`ROUTIQ_BOT_RETURN_RATE` (default `0.1`) is the slice that the dispatcher
+closes out as `RETURNED`. A failed attempt raises a `ShipmentFailed` event, so
+the customer gets a critical "failed attempt" email. Set both to `0` for an
+all-green run.
 
 ## Configuration
 
@@ -46,6 +68,10 @@ All settings have defaults; override with environment variables (see
 | `ROUTIQ_DEMO_PASSWORD` | `Passw0rd!demo` | Shared demo password |
 | `ROUTIQ_BOT_ROUNDS` | `1` | Rounds to run (`0` = infinite) |
 | `ROUTIQ_BOT_INTERVAL_SECONDS` | `15` | Pause between rounds |
+| `ROUTIQ_BOT_FAILURE_RATE` | `0.25` | Chance a shipment hits a failed attempt |
+| `ROUTIQ_BOT_RETURN_RATE` | `0.1` | Chance a shipment ends RETURNED |
+| `ROUTIQ_BOT_ROTATION_WINDOW_MINUTES` | `30` | Minutes per driver-rotation step |
+| `ROUTIQ_BOT_ROTATION_OFFSET` | clock-derived | Pin the rotation slot |
 | `ROUTIQ_BOT_WARMUP_SECONDS` | `300` | How long to wait for a sleeping host to boot before giving up |
 | `ROUTIQ_BOT_HTTP_RETRIES` | `6` | Attempts per request on transient failures |
 | `ROUTIQ_BOT_HTTP_TIMEOUT_MS` | `30000` | Per-attempt request timeout |
