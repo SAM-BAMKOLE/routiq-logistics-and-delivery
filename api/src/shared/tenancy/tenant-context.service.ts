@@ -62,6 +62,20 @@ export class TenantContextService {
   }
 
   /**
+   * A TypeORM `where` fragment that scopes a query to the active tenant.
+   *
+   * Spread it into a `where` object: `{ id, ...this.tenants.scope() }`. When no
+   * tenant is active — login, platform routes, bootstrap — it returns an empty
+   * object, so the query runs unfiltered by design rather than throwing. Every
+   * repository that touches a tenant-scoped table must use this (or an
+   * explicit `tenantId`) so tenant isolation never depends on the caller.
+   */
+  scope(): { tenantId?: string } {
+    const tenantId = this.getTenantId();
+    return tenantId === undefined ? {} : { tenantId };
+  }
+
+  /**
    * Runs `fn` with a freshly established principal. Used by background jobs
    * (whose payload carries the tenant) and by tests, which have no request to
    * populate the context.

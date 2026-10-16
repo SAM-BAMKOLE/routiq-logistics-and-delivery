@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * Memberships tie a global user to a tenant with a role. They are the first
@@ -28,7 +28,7 @@ export class CreateMemberships1756000000003 implements MigrationInterface {
       )
     `);
 
-    await enableTenantIsolation(queryRunner, 'memberships');
+    await createTenantIndex(queryRunner, 'memberships');
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

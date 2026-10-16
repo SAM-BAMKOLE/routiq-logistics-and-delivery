@@ -21,8 +21,8 @@ import type {
  * which is what makes the dispatch proximity query fast and what the
  * geofence check reuses; coordinates therefore enter and leave through
  * `ST_MakePoint`/`ST_X`/`ST_Y`, never through a numeric column. Every query
- * filters `tenant_id` explicitly on top of RLS: belt and braces, and it
- * documents for the reader which tenant each cross-module read belongs to.
+ * filters `tenant_id` explicitly, and documents for the reader which tenant
+ * each cross-module read belongs to.
  */
 @Injectable()
 export class TypeOrmTrackingRepository implements TrackingRepository {
@@ -120,7 +120,8 @@ export class TypeOrmTrackingRepository implements TrackingRepository {
          ST_Y(a.location::geometry) AS latitude,
          ST_X(a.location::geometry) AS longitude
        FROM shipments s
-       JOIN addresses a ON a.id = s.dropoff_address_id
+       JOIN addresses a
+         ON a.id = s.dropoff_address_id AND a.tenant_id = s.tenant_id
        WHERE s.tenant_id = $1
          AND s.driver_id = $2
          AND s.status = 'OUT_FOR_DELIVERY'`,
@@ -239,7 +240,7 @@ export class TypeOrmTrackingRepository implements TrackingRepository {
          r.id AS route_id,
          rs.planned_arrival AS planned_arrival
        FROM route_stops rs
-       JOIN routes r ON r.id = rs.route_id
+       JOIN routes r ON r.id = rs.route_id AND rs.tenant_id = r.tenant_id
        WHERE r.tenant_id = $1
          AND rs.shipment_id = $2
          AND r.status IN ('planned', 'active')

@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { STATE_FILE } from './paths.js';
 
 export interface DatabaseState {
-  /** Connection string for the table owner (runs migrations). */
+  /** Connection string for the schema owner (runs migrations). */
   ownerUrl: string;
-  /** Connection string for the restricted runtime role (`ldms_app`). */
+  /** Connection string the application uses (same role as the owner). */
   appUrl: string;
   /** Name of the throwaway database created for the test run. */
   database: string;

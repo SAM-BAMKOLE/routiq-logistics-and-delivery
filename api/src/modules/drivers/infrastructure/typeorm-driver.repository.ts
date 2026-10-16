@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import type { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import type { Repository } from 'typeorm';
+import { TenantContextService } from '../../../shared/tenancy/tenant-context.service.js';
 import type {
   CreateDriverInput,
   CreateShiftInput,
@@ -23,6 +24,7 @@ import { DriverShiftOrmEntity } from './driver-shift.orm-entity.js';
 export class TypeOrmDriverRepository implements DriverRepository {
   constructor(
     private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>,
+    private readonly tenants: TenantContextService,
   ) {}
 
   async create(
@@ -40,7 +42,9 @@ export class TypeOrmDriverRepository implements DriverRepository {
   }
 
   async findById(id: string): Promise<Driver | null> {
-    const entity = await this.repository().findOne({ where: { id } });
+    const entity = await this.repository().findOne({
+      where: { id, ...this.tenants.scope() },
+    });
     return entity ? toDriver(entity) : null;
   }
 
@@ -74,7 +78,9 @@ export class TypeOrmDriverRepository implements DriverRepository {
 
   async update(id: string, changes: UpdateDriverInput): Promise<Driver | null> {
     const repository = this.repository();
-    const entity = await repository.findOne({ where: { id } });
+    const entity = await repository.findOne({
+      where: { id, ...this.tenants.scope() },
+    });
     if (!entity) {
       return null;
     }
@@ -83,7 +89,10 @@ export class TypeOrmDriverRepository implements DriverRepository {
   }
 
   async remove(id: string): Promise<boolean> {
-    const result = await this.repository().delete({ id });
+    const result = await this.repository().delete({
+      id,
+      ...this.tenants.scope(),
+    });
     return (result.affected ?? 0) > 0;
   }
 
@@ -97,6 +106,7 @@ export class TypeOrmDriverRepository implements DriverRepository {
 export class TypeOrmShiftRepository implements ShiftRepository {
   constructor(
     private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>,
+    private readonly tenants: TenantContextService,
   ) {}
 
   async create(
@@ -113,20 +123,25 @@ export class TypeOrmShiftRepository implements ShiftRepository {
   }
 
   async findById(id: string): Promise<DriverShift | null> {
-    const entity = await this.repository().findOne({ where: { id } });
+    const entity = await this.repository().findOne({
+      where: { id, ...this.tenants.scope() },
+    });
     return entity ? toShift(entity) : null;
   }
 
   async listByDriver(driverId: string): Promise<DriverShift[]> {
     const entities = await this.repository().find({
-      where: { driverId },
+      where: { driverId, ...this.tenants.scope() },
       order: { startsAt: 'ASC' },
     });
     return entities.map(toShift);
   }
 
   async remove(id: string): Promise<boolean> {
-    const result = await this.repository().delete({ id });
+    const result = await this.repository().delete({
+      id,
+      ...this.tenants.scope(),
+    });
     return (result.affected ?? 0) > 0;
   }
 

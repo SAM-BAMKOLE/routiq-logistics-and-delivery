@@ -7,14 +7,12 @@ import { TenantContextService } from './tenant-context.service.js';
 /**
  * The single place a tenant transaction is opened.
  *
- * A transaction is what makes `SET LOCAL app.tenant_id` safe: the setting is
- * bound to the transaction, so a pooled connection goes back to the pool
- * clean and the next request cannot inherit it. Every query inside runs as the
- * restricted `ldms_app` role under the tenant's RLS policy.
- *
- * `nestjs-cls` + `@nestjs-cls/transactional` keep the transaction's
- * `EntityManager` in the CLS store, so repositories get it for free: they ask
- * the `TransactionHost` for `tx` and never touch the pooled manager directly.
+ * It wraps each tenant-scoped request in one transaction, so a request's writes
+ * commit or roll back together. `nestjs-cls` + `@nestjs-cls/transactional` keep
+ * the transaction's `EntityManager` in the CLS store, so repositories get it for
+ * free: they ask the `TransactionHost` for `tx` and never touch the pooled
+ * manager directly. Tenant isolation itself is applied by the repositories,
+ * which filter every query by the active tenant.
  */
 @Injectable()
 export class TenantTransactionService {
@@ -35,11 +33,11 @@ export class TenantTransactionService {
   inTenantTransaction<T>(
     fn: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
-    const tenantId = this.context.requireTenantId();
-    return this.txHost.withTransaction(async () => {
-      await this.applyTenantSetting(tenantId);
-      return fn(this.txHost.tx);
-    });
+    // Fail fast if a tenant-scoped route reaches here with no principal:
+    // repositories scope their queries to the active tenant, so an empty
+    // context must never silently run a cross-tenant transaction.
+    this.context.requireTenantId();
+    return this.txHost.withTransaction(async () => fn(this.txHost.tx));
   }
 
   /**
@@ -53,18 +51,6 @@ export class TenantTransactionService {
     return this.context.runWith(
       { tenantId, userId: '', role: 'system', isPlatformAdmin: false },
       () => this.inTenantTransaction(fn),
-    );
-  }
-
-  /**
-   * Binds the tenant to the open transaction. `true` makes it
-   * transaction-local — the bind-parameter form of `SET LOCAL` — so it can
-   * never outlive the transaction.
-   */
-  private async applyTenantSetting(tenantId: string): Promise<void> {
-    await this.txHost.tx.query(
-      `SELECT set_config('app.tenant_id', $1, true)`,
-      [tenantId],
     );
   }
 }

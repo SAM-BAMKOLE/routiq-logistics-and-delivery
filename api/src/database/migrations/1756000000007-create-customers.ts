@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * Customer profiles plus their saved addresses.
@@ -29,7 +29,7 @@ export class CreateCustomers1756000000007 implements MigrationInterface {
         "updated_at" timestamptz NOT NULL DEFAULT now()
       )
     `);
-    await enableTenantIsolation(queryRunner, 'customers');
+    await createTenantIndex(queryRunner, 'customers');
 
     await queryRunner.query(`
       CREATE TABLE "addresses" (
@@ -55,7 +55,7 @@ export class CreateCustomers1756000000007 implements MigrationInterface {
     await queryRunner.query(`
       CREATE INDEX "idx_addresses_location" ON "addresses" USING gist ("location")
     `);
-    await enableTenantIsolation(queryRunner, 'addresses');
+    await createTenantIndex(queryRunner, 'addresses');
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

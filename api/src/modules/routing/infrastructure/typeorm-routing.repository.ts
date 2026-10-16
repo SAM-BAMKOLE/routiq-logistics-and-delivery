@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import type { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
+import { TenantContextService } from '../../../shared/tenancy/tenant-context.service.js';
 import { Route, isRouteStatus } from '../domain/route.js';
 import type {
   NewRouteStop,
@@ -19,15 +20,16 @@ import { RoutePlanOrmEntity } from './route-plan.orm-entity.js';
 import { RouteStopOrmEntity } from './route-stop.orm-entity.js';
 
 /**
- * TypeORM implementation of the {@link RoutingRepository} port. Everything
- * runs inside the tenant transaction, so RLS scopes every table; the raw
- * plan queries additionally pin `tenant_id` in the WHERE clause, matching
- * the dispatch repository.
+ * TypeORM implementation of the {@link RoutingRepository} port. Every read and
+ * write pins `tenant_id`: the raw plan queries take the tenant as a parameter
+ * (their joins span shipments, addresses, vehicles and shifts), while the ORM
+ * paths read it from the request context.
  */
 @Injectable()
 export class TypeOrmRoutingRepository implements RoutingRepository {
   constructor(
     private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>,
+    private readonly tenants: TenantContextService,
   ) {}
 
   async findPlanShipments(
@@ -45,13 +47,16 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
         s.window_start,
         s.window_end
       FROM shipments s
-      LEFT JOIN addresses a ON a.id = s.dropoff_address_id
+      LEFT JOIN addresses a
+        ON a.id = s.dropoff_address_id AND a.tenant_id = s.tenant_id
       WHERE s.tenant_id = $1
         AND s.status = 'CONFIRMED'
         AND (s.window_start IS NULL OR s.window_start < ($2::date + interval '1 day'))
         AND (s.window_end IS NULL OR s.window_end >= $2::date)
         AND NOT EXISTS (
-          SELECT 1 FROM route_stops rs WHERE rs.shipment_id = s.id
+          SELECT 1 FROM route_stops rs
+           WHERE rs.shipment_id = s.id
+             AND rs.tenant_id = s.tenant_id
         )
       ORDER BY s.id
       `,
@@ -91,11 +96,14 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
         shift.ends_at
       FROM vehicles v
       LEFT JOIN drivers d
-        ON d.current_vehicle_id = v.id AND d.status = 'active'
+        ON d.current_vehicle_id = v.id
+       AND d.status = 'active'
+       AND d.tenant_id = v.tenant_id
       LEFT JOIN LATERAL (
         SELECT s.starts_at, s.ends_at
           FROM driver_shifts s
          WHERE s.driver_id = d.id
+           AND s.tenant_id = v.tenant_id
            AND s.starts_at < ($2::date + interval '1 day')
            AND s.ends_at > $2::date
          ORDER BY s.starts_at ASC
@@ -148,7 +156,7 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
 
   async findPlan(planId: string): Promise<RoutePlanRecord | null> {
     const entity = await this.manager().findOne(RoutePlanOrmEntity, {
-      where: { id: planId },
+      where: { id: planId, ...this.tenants.scope() },
     });
     return entity ? toPlanRecord(entity) : null;
   }
@@ -163,7 +171,7 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
   }): Promise<void> {
     await this.manager().update(
       RoutePlanOrmEntity,
-      { id: props.planId },
+      { id: props.planId, ...this.tenants.scope() },
       {
         status: 'planned',
         unassigned: [...props.unassigned],
@@ -179,7 +187,7 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
   async markPlanFailed(planId: string, error: string): Promise<void> {
     await this.manager().update(
       RoutePlanOrmEntity,
-      { id: planId },
+      { id: planId, ...this.tenants.scope() },
       { status: 'failed', error },
     );
   }
@@ -224,7 +232,7 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
 
   async findRoutesByPlan(planId: string): Promise<RouteWithStops[]> {
     const entities = await this.manager().find(RouteOrmEntity, {
-      where: { planId },
+      where: { planId, ...this.tenants.scope() },
       order: { id: 'ASC' },
     });
     return this.withStops(entities);
@@ -234,6 +242,10 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
     let builder = this.manager()
       .getRepository(RouteOrmEntity)
       .createQueryBuilder('route');
+    const tenantId = this.tenants.getTenantId();
+    if (tenantId !== undefined) {
+      builder = builder.andWhere('route.tenant_id = :tenantId', { tenantId });
+    }
     if (filters.planDate) {
       builder = builder.andWhere('route.plan_date = :planDate', {
         planDate: filters.planDate,
@@ -259,7 +271,7 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
 
   async findRoute(routeId: string): Promise<RouteWithStops | null> {
     const entity = await this.manager().findOne(RouteOrmEntity, {
-      where: { id: routeId },
+      where: { id: routeId, ...this.tenants.scope() },
     });
     if (!entity) {
       return null;
@@ -269,6 +281,8 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
   }
 
   async findReplanStops(routeId: string): Promise<ReplanStopInput[]> {
+    const params: unknown[] = [routeId];
+    const tenantFilter = this.tenantPredicate('s.tenant_id', params);
     const rows = (await this.manager().query(
       `
       SELECT
@@ -281,12 +295,13 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
         s.window_end
       FROM route_stops rs
       JOIN shipments s ON s.id = rs.shipment_id
-      LEFT JOIN addresses a ON a.id = s.dropoff_address_id
-      WHERE rs.route_id = $1
+      LEFT JOIN addresses a
+        ON a.id = s.dropoff_address_id AND a.tenant_id = s.tenant_id
+      WHERE rs.route_id = $1${tenantFilter}
         AND s.status <> 'DELIVERED'
       ORDER BY rs.sequence ASC
       `,
-      [routeId],
+      params,
     )) as Array<{
       shipment_id: string;
       weight_kg: string | number;
@@ -310,7 +325,7 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
   async saveRoute(route: Route): Promise<void> {
     await this.manager().update(
       RouteOrmEntity,
-      { id: route.id },
+      { id: route.id, ...this.tenants.scope() },
       {
         status: route.status,
         totalDistanceM: route.metrics.totalDistanceMeters,
@@ -347,16 +362,18 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
       return [];
     }
     const routeIds = entities.map((entity) => entity.id);
+    const params: unknown[] = [routeIds];
+    const tenantFilter = this.tenantPredicate('tenant_id', params);
     const stopRows = (await this.manager().query(
       `
       SELECT
         route_id, id, shipment_id, sequence, kind,
         planned_arrival, window_start, window_end
       FROM route_stops
-      WHERE route_id = ANY($1)
+      WHERE route_id = ANY($1)${tenantFilter}
       ORDER BY route_id ASC, sequence ASC
       `,
-      [routeIds],
+      params,
     )) as Array<StopRow>;
     const byRoute = new Map<string, RouteStopRecord[]>();
     for (const row of stopRows) {
@@ -373,6 +390,20 @@ export class TypeOrmRoutingRepository implements RoutingRepository {
       version: entity.version,
       stops: byRoute.get(entity.id) ?? [],
     }));
+  }
+
+  /**
+   * Appends a tenant predicate to the running parameter list and returns the
+   * SQL fragment (` AND <column> = $n`), or an empty string when no tenant is
+   * active. Mutating `params` keeps the placeholder index in sync.
+   */
+  private tenantPredicate(column: string, params: unknown[]): string {
+    const tenantId = this.tenants.getTenantId();
+    if (tenantId === undefined) {
+      return '';
+    }
+    params.push(tenantId);
+    return ` AND ${column} = $${params.length}`;
   }
 
   private manager() {

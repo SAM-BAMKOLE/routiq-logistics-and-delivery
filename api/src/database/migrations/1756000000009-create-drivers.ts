@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * Driver profiles plus their shifts.
@@ -33,7 +33,7 @@ export class CreateDrivers1756000000009 implements MigrationInterface {
         CONSTRAINT "uq_drivers_tenant_license" UNIQUE ("tenant_id", "license_no")
       )
     `);
-    await enableTenantIsolation(queryRunner, 'drivers');
+    await createTenantIndex(queryRunner, 'drivers');
 
     await queryRunner.query(`
       CREATE TABLE "driver_shifts" (
@@ -51,7 +51,7 @@ export class CreateDrivers1756000000009 implements MigrationInterface {
     await queryRunner.query(`
       CREATE INDEX "idx_driver_shifts_driver_id" ON "driver_shifts" ("driver_id")
     `);
-    await enableTenantIsolation(queryRunner, 'driver_shifts');
+    await createTenantIndex(queryRunner, 'driver_shifts');
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

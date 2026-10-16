@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * Tenant rate cards. Money is integer minor units (kobo, cents) so no
@@ -30,7 +30,7 @@ export class CreatePricing1756000000010 implements MigrationInterface {
       CREATE INDEX "idx_pricing_rules_tenant_priority"
         ON "pricing_rules" ("tenant_id", "priority")
     `);
-    await enableTenantIsolation(queryRunner, 'pricing_rules');
+    await createTenantIndex(queryRunner, 'pricing_rules');
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

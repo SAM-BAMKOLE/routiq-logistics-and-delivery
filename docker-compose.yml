@@ -1,29 +1,11 @@
 name: ldms
 
-# Local development infrastructure. The API and worker run on the host via
-# pnpm; only the backing services run in Docker. Start everything with:
+# Optional local backing services. The API and web run on the host via pnpm.
+# Postgres is a hosted Neon database (see api/.env.example); only the services
+# below are meant to run in Docker, and only when you need them.
 #   docker compose up -d
 services:
-  postgres:
-    image: postgis/postgis:16-3.4
-    container_name: ldms-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ldms_owner
-      POSTGRES_PASSWORD: ldms_owner
-      POSTGRES_DB: ldms
-    ports:
-      - '5432:5432'
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      # Provisions the restricted runtime role (ldms_app) on first start.
-      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ldms_owner -d ldms']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
+  # Queue backing store for the deferred BullMQ worker.
   redis:
     image: redis:7-alpine
     container_name: ldms-redis
@@ -50,5 +32,4 @@ services:
       - '8025:8025'
 
 volumes:
-  postgres-data:
   redis-data:

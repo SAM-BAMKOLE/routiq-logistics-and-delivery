@@ -33,16 +33,17 @@ export default async function globalSetup(): Promise<void> {
 
   const ownerUrl = container.getConnectionUri();
 
-  const appUrl = new URL(ownerUrl);
-  appUrl.username = 'ldms_app';
-  appUrl.password = 'ldms_app';
+  // Single-role deployment: the application connects as the same role that
+  // owns the schema. Tenant isolation lives in the application layer, so there
+  // is no separate restricted runtime role to provision.
+  const appUrl = ownerUrl;
 
   writeFileSync(
     STATE_FILE,
     JSON.stringify(
       {
         ownerUrl,
-        appUrl: appUrl.toString(),
+        appUrl,
         database: container.getDatabase(),
         containerId: container.getId(),
       },

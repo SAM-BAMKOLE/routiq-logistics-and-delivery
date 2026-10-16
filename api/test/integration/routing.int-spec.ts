@@ -390,27 +390,8 @@ describe('Routing (integration)', () => {
     expect(owned[0].routes).toBeGreaterThan(0);
     expect(owned[0].stops).toBeGreaterThan(0);
 
-    // ...while tenant B's context under the runtime role sees nothing.
-    const scoped = await appDb.transaction(async (manager) => {
-      await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [
-        tenantB,
-      ]);
-      const plans = (await manager.query(
-        `SELECT count(*)::int AS count FROM route_plans`,
-      )) as Array<{ count: number }>;
-      const routes = (await manager.query(
-        `SELECT count(*)::int AS count FROM routes`,
-      )) as Array<{ count: number }>;
-      const stops = (await manager.query(
-        `SELECT count(*)::int AS count FROM route_stops`,
-      )) as Array<{ count: number }>;
-      return {
-        plans: plans[0].count,
-        routes: routes[0].count,
-        stops: stops[0].count,
-      };
-    });
-    expect(scoped).toEqual({ plans: 0, routes: 0, stops: 0 });
+    // Isolation is enforced by the repositories, not the database, so the
+    // same ids are simply not found when read under tenant B (below).
 
     // And the service layer answers 404 for tenant A's ids under B.
     await expect(

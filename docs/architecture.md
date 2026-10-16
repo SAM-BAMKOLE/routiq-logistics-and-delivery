@@ -9,7 +9,7 @@ LDMS is a multi-tenant NestJS backend that lets logistics companies take deliver
 **Goals**
 
 - Demonstrate advanced backend design: modular monolith, hexagonal layering, CQRS, domain events, and the outbox pattern.
-- Enforce tenant isolation inside the database with Postgres Row-Level Security (RLS).
+- Enforce tenant isolation in the application layer: every repository query is scoped to the active tenant.
 - Implement a real vehicle routing algorithm (CVRPTW) instead of calling a black-box service.
 - Run entirely on free services, with email sent through Gmail SMTP.
 - Stay verifiable: tests, benchmarks, ADRs, and diagrams a reviewer can read in minutes.
@@ -27,9 +27,9 @@ LDMS is a multi-tenant NestJS backend that lets logistics companies take deliver
 **Success criteria**
 
 - A tenant can run the full flow: quote, shipment, dispatch, route, delivery, email receipt.
-- A cross-tenant read attempt fails at the database level, proven by an automated test.
+- A cross-tenant read attempt is refused, proven by an automated test.
 - The route optimizer beats a nearest-neighbor baseline on benchmark instances, with the results published in the README.
-- The whole system starts with `docker compose up` and deploys on free tiers.
+- The whole system runs against a free hosted Postgres (Neon) and deploys on free tiers.
 
 ## Constraints, assumptions and non-goals
 
@@ -67,7 +67,7 @@ LDMS is a modular monolith with strict module boundaries, domain events between 
 | Hexagonal layers | Each module has domain, application, infrastructure, and presentation layers. Dependencies point inward. | The domain stays testable and independent of TypeORM, Redis, and Nodemailer. |
 | CQRS where it pays | Commands and queries are separate in shipments, dispatch, and routing. Simple CRUD modules stay simple. | Avoids ceremony in modules that do not need it. |
 | Domain events | Modules react to events instead of calling each other. Events leave through an outbox in phase 2. | Loose coupling and reliable delivery of side effects. |
-| Database-enforced tenancy | Tenant isolation is a Postgres RLS policy, not only application filtering. | A bug in application code cannot leak another tenant's data. |
+| Application-enforced tenancy | Tenant isolation is applied by the repositories, which scope every query to the active tenant. | Directly readable and testable, with no dependency on a database policy or role. |
 | Ports and adapters for external services | Email, maps, storage, and distance matrices sit behind interfaces. | Free services can be swapped or faked without touching the domain. |
 | Pure algorithms | Pricing, the state machine, and route optimization are plain TypeScript with no framework imports. | Deterministic unit tests and benchmarks. |
 
@@ -84,7 +84,7 @@ Every component below is free, either as a hosted free tier or as a Docker conta
 | Concern | Choice | Notes |
 | --- | --- | --- |
 | Framework | NestJS with strict TypeScript | Modules, DI, guards, interceptors, WebSocket gateways |
-| Database | PostgreSQL with PostGIS | Neon or Supabase free tier in the cloud, Docker locally |
+| Database | PostgreSQL with PostGIS | Neon free tier in the cloud; any PostGIS instance locally |
 | ORM | TypeORM | Migrations only. Spatial queries written as raw query-builder expressions. |
 | Transaction and tenant context | `nestjs-cls` with `@nestjs-cls/transactional` (TypeORM adapter) | Per-request transaction and ambient tenant context |
 | Cache and pub/sub | Redis | Upstash free tier or Docker. Added in phase 2 for queues. |
@@ -102,8 +102,8 @@ Every component below is free, either as a hosted free tier or as a Docker conta
 | Error tracking | Sentry free tier | Optional |
 | Testing | Jest, Supertest, Testcontainers | Real Postgres in integration tests |
 | CI/CD | GitHub Actions | Free for public repositories |
-| Containers | Docker and Docker Compose | One command to run everything locally |
-| Hosting | Render, Fly.io, or an Oracle Cloud Always Free VM | Free tiers may sleep, so document cold starts |
+| Containers | Docker and Docker Compose | Optional local Redis and Mailpit only |
+| Hosting | Neon (database) plus Render, Fly.io, or an Oracle Cloud Always Free VM | Free tiers may sleep, so document cold starts |
 
 Google Maps is excluded because it requires a billing account.
 
@@ -121,7 +121,7 @@ In phase 2 the API process hands slow work to the worker through the outbox. The
 | --- | --- | --- |
 | API process | 1 | REST controllers, Socket.IO gateway, authentication, command and query handling, in-process events |
 | Worker process | 2 | Outbox relay, queue processors for email, routing, events, and maintenance, and the route optimizer thread pool |
-| PostgreSQL with PostGIS | 1 | System of record with RLS, plus the outbox and audit tables |
+| PostgreSQL with PostGIS | 1 | System of record, plus the outbox and audit tables |
 | Redis | 2 | BullMQ queues, latest driver positions, email quota counters, Socket.IO adapter |
 | Gmail SMTP | 1 | Outbound email |
 | OSRM or OpenRouteService | 1 | Road distance and duration matrices, cached |

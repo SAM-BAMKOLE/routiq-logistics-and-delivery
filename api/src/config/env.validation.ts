@@ -53,9 +53,10 @@ export class EnvironmentVariables {
   CORS_ORIGINS: string = 'http://localhost:5173';
 
   /**
-   * Runtime database connection, as the restricted `ldms_app` role: subject to
-   * Row Level Security and unable to run DDL. Migrations use
-   * `MIGRATION_DATABASE_URL` instead (read only by the TypeORM CLI).
+   * Runtime database connection. On Neon this is the pooled host. Migrations
+   * use `MIGRATION_DATABASE_URL` instead (read only by the TypeORM CLI): DDL
+   * needs a direct connection. Tenant isolation is enforced in the
+   * repositories, not by the database.
    */
   @IsString()
   @IsNotEmpty()

@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * Dispatch: the assignment lifecycle table, the driver position table that
@@ -85,7 +85,7 @@ export class CreateDispatch1756000000013 implements MigrationInterface {
         ON "dispatch_assignments" ("vehicle_id")
         WHERE "status" IN ('offered', 'accepted') AND "vehicle_id" IS NOT NULL
     `);
-    await enableTenantIsolation(queryRunner, 'dispatch_assignments');
+    await createTenantIndex(queryRunner, 'dispatch_assignments');
 
     await queryRunner.query(`
       CREATE TABLE "driver_locations" (
@@ -109,7 +109,7 @@ export class CreateDispatch1756000000013 implements MigrationInterface {
       CREATE INDEX "idx_driver_locations_location"
         ON "driver_locations" USING GIST ("location")
     `);
-    await enableTenantIsolation(queryRunner, "driver_locations");
+    await createTenantIndex(queryRunner, "driver_locations");
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

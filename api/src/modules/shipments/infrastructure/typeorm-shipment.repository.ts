@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import type { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import type { EntityManager } from 'typeorm';
+import { TenantContextService } from '../../../shared/tenancy/tenant-context.service.js';
 import {
   Shipment,
   type ShipmentItem,
@@ -23,6 +24,7 @@ import { ShipmentOrmEntity } from './shipment.orm-entity.js';
 export class TypeOrmShipmentRepository implements ShipmentRepository {
   constructor(
     private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>,
+    private readonly tenants: TenantContextService,
   ) {}
 
   async insert(shipment: Shipment): Promise<void> {
@@ -64,7 +66,7 @@ export class TypeOrmShipmentRepository implements ShipmentRepository {
     // matching the aggregate's own increment from the same transition.
     await manager.update(
       ShipmentOrmEntity,
-      { id: shipment.id },
+      { id: shipment.id, ...this.tenants.scope() },
       {
         status: shipment.status,
         failedAttempts: shipment.failedAttempts,
@@ -76,12 +78,14 @@ export class TypeOrmShipmentRepository implements ShipmentRepository {
 
   async findById(id: string): Promise<Shipment | null> {
     const manager = this.manager();
-    const entity = await manager.findOne(ShipmentOrmEntity, { where: { id } });
+    const entity = await manager.findOne(ShipmentOrmEntity, {
+      where: { id, ...this.tenants.scope() },
+    });
     if (!entity) {
       return null;
     }
     const items = await manager.find(ShipmentItemOrmEntity, {
-      where: { shipmentId: id },
+      where: { shipmentId: id, ...this.tenants.scope() },
       order: { createdAt: 'ASC' },
     });
     return toDomain(entity, items);

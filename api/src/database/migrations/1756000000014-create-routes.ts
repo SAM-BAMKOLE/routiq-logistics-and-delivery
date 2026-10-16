@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * Routing: the planning run, the routes it produced, and their stops.
@@ -49,7 +49,7 @@ export class CreateRoutes1756000000014 implements MigrationInterface {
       CREATE INDEX "idx_route_plans_tenant_date"
         ON "route_plans" ("tenant_id", "plan_date")
     `);
-    await enableTenantIsolation(queryRunner, 'route_plans');
+    await createTenantIndex(queryRunner, 'route_plans');
 
     await queryRunner.query(`
       CREATE TABLE "routes" (
@@ -85,7 +85,7 @@ export class CreateRoutes1756000000014 implements MigrationInterface {
       CREATE INDEX "idx_routes_tenant_status"
         ON "routes" ("tenant_id", "status")
     `);
-    await enableTenantIsolation(queryRunner, 'routes');
+    await createTenantIndex(queryRunner, 'routes');
 
     await queryRunner.query(`
       CREATE TABLE "route_stops" (
@@ -112,7 +112,7 @@ export class CreateRoutes1756000000014 implements MigrationInterface {
       CREATE INDEX "idx_route_stops_route_sequence"
         ON "route_stops" ("route_id", "sequence")
     `);
-    await enableTenantIsolation(queryRunner, 'route_stops');
+    await createTenantIndex(queryRunner, 'route_stops');
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * Tracking and proof of delivery (Step 10).
@@ -16,11 +16,12 @@ import { enableTenantIsolation } from '../rls.js';
  *   generates its own on create). The three `otp_*` columns hold the delivery
  *   OTP state — hash, expiry, attempt counter — written by the proof-of-
  *   delivery module, never the plaintext code.
- * - `lookup_public_shipment` mirrors the login lookup of migration 6: public
- *   tracking runs with no tenant context, so RLS would hide every row from
- *   the app role. The `SECURITY DEFINER` function takes typed parameters (no
- *   injection surface) and returns only the ids needed to re-enter a normal
- *   tenant-scoped read under RLS.
+ * - `lookup_public_shipment` resolves the owning tenant before any tenant
+ *   context exists: public tracking presents a tracking number plus a
+ *   `public_token`, and this helper returns only the ids needed to re-enter a
+ *   normal tenant-scoped read. The `SECURITY DEFINER` function takes typed
+ *   parameters (no injection surface) and returns nothing without both
+ *   secrets.
  * - The extra `driver_locations` btree backs the retention sweep, which
  *   deletes per tenant by `recorded_at`; the existing per-driver index cannot
  *   serve it.
@@ -50,10 +51,7 @@ export class CreateTrackingPod1756000000015 implements MigrationInterface {
       CREATE INDEX "idx_proofs_of_delivery_tenant_shipment"
         ON "proofs_of_delivery" ("tenant_id", "shipment_id")
     `);
-    await enableTenantIsolation(queryRunner, 'proofs_of_delivery');
-    await queryRunner.query(
-      `REVOKE UPDATE, DELETE ON "proofs_of_delivery" FROM ldms_app`,
-    );
+    await createTenantIndex(queryRunner, 'proofs_of_delivery');
 
     await queryRunner.query(`
       ALTER TABLE "shipments"
@@ -90,9 +88,6 @@ export class CreateTrackingPod1756000000015 implements MigrationInterface {
     `);
     await queryRunner.query(
       `REVOKE ALL ON FUNCTION lookup_public_shipment(text, text) FROM PUBLIC`,
-    );
-    await queryRunner.query(
-      `GRANT EXECUTE ON FUNCTION lookup_public_shipment(text, text) TO ldms_app`,
     );
   }
 

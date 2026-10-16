@@ -12,8 +12,8 @@ self-hosted open-source services.
 - **Modular monolith** — 14 bounded contexts behind a NestJS module system.
 - **Hexagonal layering** into domain, application, infrastructure and
   presentation, with dependencies pointing inward.
-- **Database-enforced tenancy** — Postgres Row-Level Security, not just
-  application filtering.
+- **Application-enforced tenancy** — every repository query is scoped to the
+  active tenant, so isolation does not depend on the database configuration.
 - **CQRS** where it pays, domain events between modules, and the outbox pattern
   for reliable async work.
 - **A real route optimizer** — CVRPTW implemented in plain TypeScript
@@ -26,7 +26,7 @@ self-hosted open-source services.
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| **Phase 1** | Core API: scaffold, tenancy + RLS, identity/RBAC, shipments, pricing, dispatch, routing, tracking, notifications | 🚧 In progress |
+| **Phase 1** | Core API: scaffold, tenancy, identity/RBAC, shipments, pricing, dispatch, routing, tracking, notifications | 🚧 In progress |
 | **Phase 2** | Outbox + embedded relay (done); Redis/BullMQ worker and dispatch saga (deferred) | 🚧 In progress |
 | **Phase 3** | Reporting, audit, observability, deployment and docs | ⬜ Not started |
 
@@ -41,7 +41,6 @@ routiq/
   bots/              # dummy logistics companies driving the public API
   docs/              # architecture, ADRs, diagrams
     architecture.md
-  docker-compose.yml # local Postgres+PostGIS
   .github/workflows/ # CI + keep-alive
 ```
 
@@ -50,15 +49,21 @@ no workspace root.
 
 ## Getting started
 
+The database is a free [Neon](https://neon.tech) Postgres with PostGIS. No local
+Docker is required.
+
 ```bash
-docker compose up -d          # backing services
 cd api
 pnpm install
-cp .env.example .env
-pnpm db:migrate
-pnpm db:seed:demo             # optional demo tenants + manifest for bots/
+cp .env.example .env           # then paste your Neon connection strings
+pnpm db:migrate                # applies the schema over the direct (non-pooler) URL
+pnpm db:seed:demo              # optional demo tenants + manifest for bots/
 pnpm start:dev
 ```
+
+`DATABASE_URL` should be the **pooled** Neon host (`...-pooler...`); migrations
+use `MIGRATION_DATABASE_URL`, the **direct** host, because DDL over a pooler is
+unreliable. Both are in the Neon dashboard's connection details.
 
 Then open <http://localhost:3000/docs> for the OpenAPI docs.
 

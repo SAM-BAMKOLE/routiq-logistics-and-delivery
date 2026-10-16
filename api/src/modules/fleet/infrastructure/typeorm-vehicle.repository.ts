@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import type { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import type { Repository } from 'typeorm';
+import { TenantContextService } from '../../../shared/tenancy/tenant-context.service.js';
 import type {
   CreateVehicleInput,
   UpdateVehicleInput,
@@ -17,6 +18,7 @@ import { VehicleOrmEntity } from './vehicle.orm-entity.js';
 export class TypeOrmVehicleRepository implements VehicleRepository {
   constructor(
     private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>,
+    private readonly tenants: TenantContextService,
   ) {}
 
   async create(input: CreateVehicleInput): Promise<Vehicle> {
@@ -33,7 +35,9 @@ export class TypeOrmVehicleRepository implements VehicleRepository {
   }
 
   async findById(id: string): Promise<Vehicle | null> {
-    const entity = await this.repository().findOne({ where: { id } });
+    const entity = await this.repository().findOne({
+      where: { id, ...this.tenants.scope() },
+    });
     return entity ? toDomain(entity) : null;
   }
 
@@ -57,7 +61,9 @@ export class TypeOrmVehicleRepository implements VehicleRepository {
     changes: UpdateVehicleInput,
   ): Promise<Vehicle | null> {
     const repository = this.repository();
-    const entity = await repository.findOne({ where: { id } });
+    const entity = await repository.findOne({
+      where: { id, ...this.tenants.scope() },
+    });
     if (!entity) {
       return null;
     }
@@ -66,7 +72,10 @@ export class TypeOrmVehicleRepository implements VehicleRepository {
   }
 
   async remove(id: string): Promise<boolean> {
-    const result = await this.repository().delete({ id });
+    const result = await this.repository().delete({
+      id,
+      ...this.tenants.scope(),
+    });
     return (result.affected ?? 0) > 0;
   }
 

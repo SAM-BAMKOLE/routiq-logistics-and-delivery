@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * Fleet vehicles. Plates are unique per tenant (two tenants may run the same
@@ -26,7 +26,7 @@ export class CreateFleet1756000000008 implements MigrationInterface {
         CONSTRAINT "uq_vehicles_tenant_plate" UNIQUE ("tenant_id", "plate")
       )
     `);
-    await enableTenantIsolation(queryRunner, 'vehicles');
+    await createTenantIndex(queryRunner, 'vehicles');
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

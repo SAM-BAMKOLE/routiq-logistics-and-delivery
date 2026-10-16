@@ -9,8 +9,8 @@ import { ShipmentStatusHistoryOrmEntity } from './shipment-status-history.orm-en
 
 /**
  * TypeORM implementation of the append-only {@link ShipmentHistoryRepository}
- * port. Inserts only - the migration revoked UPDATE and DELETE from the
- * runtime role, so the audit trail cannot be rewritten even by mistake.
+ * port. Inserts only: no code path issues UPDATE or DELETE against the audit
+ * trail, so it can only ever grow.
  */
 @Injectable()
 export class TypeOrmShipmentHistoryRepository

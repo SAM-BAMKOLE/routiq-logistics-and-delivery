@@ -12,7 +12,7 @@ decisions live in [`../docs`](../docs) and the repo [README](../README.md).
 | Concern | Choice |
 | --- | --- |
 | Framework | NestJS 12 (strict TypeScript, ESM) |
-| Database | PostgreSQL + PostGIS (Docker locally, Neon/Supabase in the cloud) |
+| Database | PostgreSQL + PostGIS (hosted on Neon; any PostGIS instance locally) |
 | ORM | TypeORM (migrations only) |
 | Job queue | Deferred — embedded outbox relay + in-process tasks (Redis/BullMQ later) |
 | Realtime | Socket.IO *(phase 2)* |
@@ -27,20 +27,23 @@ decisions live in [`../docs`](../docs) and the repo [README](../README.md).
 
 - Node.js >= 22
 - pnpm 10+
-- Docker (for local Postgres/PostGIS, Redis and Mailpit)
+- A Postgres database with PostGIS — the free [Neon](https://neon.tech) tier is
+  what this project uses. Docker is optional and only needed for the local
+  Redis/Mailpit services in `docker-compose.yml`, or for the container-backed
+  test suite.
 
 ## Getting started
 
 ```bash
-# from the repository root
-docker compose up -d          # Postgres+PostGIS, Redis, Mailpit
-
 cd api
 pnpm install
-cp .env.example .env          # then adjust values as needed
+cp .env.example .env          # then paste your Neon connection strings
 pnpm db:migrate               # apply schema migrations
 pnpm start:dev                # http://localhost:3000
 ```
+
+`DATABASE_URL` is the pooled Neon host; `MIGRATION_DATABASE_URL` is the direct
+(non-pooler) host, because DDL over a pooler is unreliable.
 
 Once running:
 
@@ -73,23 +76,18 @@ PostgreSQL + PostGIS, accessed through TypeORM with migrations only
 (`synchronize` is permanently off — the schema is owned by migrations, so the
 running app can never reshape it).
 
-Two roles keep tenants isolated:
+A single database role is used for both migrations and the running app. Tenant
+isolation is enforced in the application layer: every repository query is
+scoped to the active tenant (see Tenancy below), so no table depends on a
+database policy to stay isolated.
 
-| Role | Used by | Can do |
-| --- | --- | --- |
-| `ldms_owner` | Migrations (`MIGRATION_DATABASE_URL`) | Own tables, run DDL |
-| `ldms_app` | The running app (`DATABASE_URL`) | DML only; cannot run DDL; subject to Row Level Security |
+Every tenant-owned table is indexed by calling `createTenantIndex(...)` from
+[`src/database/tenant-index.ts`](src/database/tenant-index.ts) inside its
+migration, so the `tenant_id` lookups the repositories make stay fast.
 
-Locally, `docker compose up` provisions `ldms_app` on first boot (see
-[`../docker/initdb`](../docker/initdb)). Every tenant-owned table is isolated by
-calling `enableTenantIsolation(...)` from
-[`src/database/rls.ts`](src/database/rls.ts) inside its migration: the helper
-turns on and forces RLS, creates the `app.tenant_id` policy and indexes
-`tenant_id`, so no table can be forgotten.
-
-Integration tests boot a throwaway PostGIS container (Testcontainers), apply the
-migrations and exercise RLS through the restricted role; e2e tests do the same
-so the whole HTTP stack runs against real Postgres:
+The integration and e2e suites boot a throwaway PostGIS container
+(Testcontainers), apply the migrations and exercise the HTTP stack against real
+Postgres:
 
 ```bash
 pnpm test:integration
@@ -108,30 +106,30 @@ forget to isolate:
    `isPlatformAdmin`) goes into the request-scoped context
    ([CLS](src/shared/tenancy/tenant-context.service.ts), backed by
    `AsyncLocalStorage`). Login itself has no token yet, so it lists the
-   user's memberships through the `list_user_memberships` SECURITY DEFINER
-   function (migration `...0006`), which returns only that user's rows.
-2. The global `TenantTransactionInterceptor` opens a transaction and binds
-   `app.tenant_id` to it (`SET LOCAL`-equivalent through `set_config`).
-3. Repositories resolve their entity manager from the `TransactionHost`, so they
-   join that transaction and are filtered by Row Level Security.
+   user's memberships with a plain `memberships JOIN tenants` query scoped to
+   that user.
+2. The global `TenantTransactionInterceptor` opens one transaction for the
+   request.
+3. Repositories resolve their entity manager from the `TransactionHost` and
+   spread `TenantContextService.scope()` into every read and write, so the
+   active tenant is always part of the query. Raw-SQL repositories add the same
+   `tenant_id` predicate explicitly.
 
-Because the setting is transaction-local, a pooled connection is returned to
-the pool clean — the next request can never inherit a tenant. Outside a request
-(background jobs, tests), the same path is available through
-`TenantTransactionService.runWithTenant(...)`.
+Because the query is scoped per call, no pooled-connection state can leak a
+tenant into the next request. Outside a request (background jobs, tests), the
+same path is available through `TenantTransactionService.runWithTenant(...)`.
 
 The `TenantsModule` (`src/modules/tenants/`) manages the global tenant registry
 through the four-layer structure (domain → application → infrastructure →
 presentation) with a repository port bound to its TypeORM implementation.
-`memberships` is the first tenant-scoped table (migration `...0003`), isolated
-via `enableTenantIsolation`.
 
 ## Platform API
 
 Platform administration is served under `/api/v1/platform/tenants` (create,
 list, get, update). It requires a JWT whose `adm` claim is true — the
-platform-admin flag on the user, not a tenant role. No tenant context is set
-for these requests, so RLS returns no tenant data by design.
+platform-admin flag on the user, not a tenant role. These requests carry no
+tenant context, so the tenant-scoped repositories return no tenant data by
+design.
 
 The first platform admin cannot log in before existing, so environments are
 bootstrapped once with:
@@ -180,8 +178,8 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
   (`/customers`, `/customers/:id/addresses` with full CRUD on both).
   Coordinates persist as PostGIS `geography(Point, 4326)` with a GiST index;
   the repository uses explicit parameterized SQL for the spatial column
-  because TypeORM cannot map `geography` values, and RLS applies to raw SQL
-  exactly as to ORM queries.
+  because TypeORM cannot map `geography` values, and applies the same
+  `tenant_id` predicate as the ORM repositories.
 - `FleetModule`: vehicle registration (`/vehicles` CRUD) with per-tenant
   plate uniqueness (`VEHICLE_PLATE_TAKEN` on collision).
 - `DriversModule`: driver profiles linked to memberships (`/drivers` CRUD),
@@ -289,7 +287,7 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
 - `RoutingModule` (`src/modules/routing/`): turn a day's confirmed
   shipments into drivable tours — `route_plans` (the run), `routes` (one
   tour, one vehicle), and `route_stops` (a shipment's planned visit),
-  all under tenant-forced RLS like the rest of the schema. A unique index
+  each scoped to the active tenant by the repository. A unique index
   on `route_stops.shipment_id` makes "planned exactly once" a schema
   invariant, not a service convention.
 - Planning is asynchronous over HTTP: `POST /routes/plan` validates the
@@ -399,7 +397,7 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
   redelivers them, and retries with exponential backoff up to
   `OUTBOX_MAX_ATTEMPTS`. Delivery and the `processed` flag share one
   transaction (tenant rows open a tenant transaction, so listeners keep their
-  RLS context), so a crash rolls back both and a redelivery starts from a
+  tenant context), so a crash rolls back both and a redelivery starts from a
   clean slate rather than a half-applied one.
 - Listeners whose effects must be retried opt into error propagation with
   `@OnEvent('<Type>', { suppressErrors: false })` — without it
@@ -413,7 +411,7 @@ Key environment: `JWT_ACCESS_SECRET` (required), `JWT_ACCESS_TTL` (default
   [`.env.example`](.env.example)). There is no Redis or BullMQ: the relay is
   embedded in the API process, which is what the zero-spend deployment runs.
 - Events are published inside the tenant transaction, so listeners see
-  the same RLS context as the writer. The email send therefore runs
+  the same tenant context as the writer. The email send therefore runs
   inside the request in phase 1 (documented tradeoff: SMTP latency lands
   on the mutating call; the quotas keep the worst case bounded).
 - `NotificationsModule` (`src/modules/notifications/`) has no HTTP
@@ -453,7 +451,7 @@ for the full list and defaults.
 src/
   config/                 # env validation
   common/errors/          # RFC 9457 problem+json filter and exceptions
-  database/               # data source, naming strategy, migrations, RLS helper
+  database/               # data source, naming strategy, migrations, tenant index helper
   health/                 # liveness and readiness probes
   modules/tenants/        # tenant registry (domain/app/infrastructure/presentation)
   modules/identity/       # users, memberships, auth, RBAC guards

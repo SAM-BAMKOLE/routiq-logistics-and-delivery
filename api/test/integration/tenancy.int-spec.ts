@@ -5,6 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { validate } from '../../src/config/env.validation.js';
 import { DatabaseModule } from '../../src/database/database.module.js';
+import { TenantContextService } from '../../src/shared/tenancy/tenant-context.service.js';
 import { TenantTransactionService } from '../../src/shared/tenancy/tenant-transaction.service.js';
 import { TenancyModule } from '../../src/shared/tenancy/tenancy.module.js';
 import {
@@ -14,23 +15,23 @@ import {
 import { readDatabaseState } from './helpers/state.js';
 
 /**
- * Exercises the tenancy kernel against a real PostGIS database: the
- * `runWithTenant` transaction opens a real transaction, binds
- * `app.tenant_id`, and the setting disappears on commit and on rollback, so a
- * pooled connection can never leak a tenant into the next request.
+ * Exercises the tenancy kernel against a real PostGIS database: `runWithTenant`
+ * opens a real transaction, publishes the tenant in the request context for its
+ * duration, and discards the context afterwards. A write commits with the
+ * transaction or rolls back with it, so a request's changes are all-or-nothing.
  */
 describe('Tenancy kernel (integration)', () => {
   let app: INestApplication;
   let transactions: TenantTransactionService;
+  let context: TenantContextService;
   let owner: DataSource;
 
   let tenantA: string;
-  let tenantB: string;
 
   beforeAll(async () => {
     await ensureSchema();
     owner = await createOwnerDataSource();
-    [tenantA, tenantB] = await seedTenantsAndMemberships(owner);
+    [tenantA] = await seedTenantsAndMemberships(owner);
 
     process.env.DATABASE_URL = readDatabaseState().appUrl;
     process.env.JWT_ACCESS_SECRET = 'integration-test-access-secret-min-32-chars';
@@ -46,6 +47,7 @@ describe('Tenancy kernel (integration)', () => {
     app = moduleRef.createNestApplication();
     await app.init();
     transactions = app.get(TenantTransactionService);
+    context = app.get(TenantContextService);
   });
 
   afterAll(async () => {
@@ -57,38 +59,41 @@ describe('Tenancy kernel (integration)', () => {
     }
   });
 
-  it('runs the callback in a transaction bound to that tenant', async () => {
-    const rows = await transactions.runWithTenant(tenantA, async (manager) => {
-      const setting = (await manager.query(
-        `SELECT current_setting($1, true) AS value`,
-        ['app.tenant_id'],
-      )) as Array<{ value: string | null }>;
+  it('publishes the tenant in context for the duration of the transaction', async () => {
+    const observed = await transactions.runWithTenant(tenantA, async () => {
+      expect(context.getTenantId()).toBe(tenantA);
+      return 'ok';
+    });
 
-      expect(setting[0].value).toBe(tenantA);
+    expect(observed).toBe('ok');
+  });
 
-      return manager.query(
-        'SELECT tenant_id FROM memberships WHERE status = $1',
-        ['active'],
+  it('discards the tenant context once the transaction returns', async () => {
+    await transactions.runWithTenant(tenantA, () => Promise.resolve());
+
+    expect(context.getTenantId()).toBeUndefined();
+  });
+
+  it('runs every write in the transaction on the same manager', async () => {
+    const userId = (
+      await owner.query(`INSERT INTO users (email) VALUES ($1) RETURNING id`, [
+        `commit-${randomUUID()}@example.com`,
+      ])
+    )[0].id as string;
+
+    await transactions.runWithTenant(tenantA, async (manager) => {
+      await manager.query(
+        `INSERT INTO memberships (tenant_id, user_id, role)
+         VALUES ($1, $2, 'dispatcher')`,
+        [tenantA, userId],
       );
     });
 
+    const rows = (await owner.query(
+      `SELECT tenant_id FROM memberships WHERE user_id = $1`,
+      [userId],
+    )) as Array<{ tenant_id: string }>;
     expect(rows).toEqual([{ tenant_id: tenantA }]);
-  });
-
-  it('different tenants are invisible to each other', async () => {
-    const rows = await transactions.runWithTenant(tenantB, async (manager) =>
-      manager.query('SELECT tenant_id FROM memberships'),
-    );
-
-    expect(rows).toEqual([{ tenant_id: tenantB }]);
-  });
-
-  it('returns nothing outside any tenant transaction', async () => {
-    // The pooled manager has no transaction and no setting: RLS returns no
-    // rows anywhere, the safe failure mode.
-    await expect(transactions.manager.query('SELECT * FROM memberships')).resolves.toEqual(
-      [],
-    );
   });
 
   it('rolls back the whole transaction when the callback throws', async () => {
@@ -101,9 +106,7 @@ describe('Tenancy kernel (integration)', () => {
 
     await expect(
       transactions.runWithTenant(tenantA, async (manager) => {
-        // A legitimate in-tenant write, undone because the callback throws.
-        // (Cross-tenant writes are already rejected by the RLS policy itself,
-        // so this deliberately stays inside the tenant.)
+        // A legitimate write, undone because the callback throws.
         await manager.query(
           `INSERT INTO memberships (tenant_id, user_id, role)
            VALUES ($1, $2, 'dispatcher')`,
@@ -120,23 +123,11 @@ describe('Tenancy kernel (integration)', () => {
     )) as Array<{ count: number }>;
     expect(rows[0].count).toBe(0);
   });
-
-  it('leaves the pooled connection with no tenant setting after commit and rollback', async () => {
-    await transactions.runWithTenant(tenantA, () => Promise.resolve());
-
-    const rows = (await transactions.manager.query(
-      `SELECT current_setting('app.tenant_id', true) AS value`,
-    )) as Array<{ value: string | null }>;
-
-    // `current_setting(..., true)` returns '' when unset. RLS treats that the
-    // same as unset via `NULLIF(current_setting('app.tenant_id', true), '')`.
-    expect(rows[0].value).toBe('');
-  });
 });
 
 /**
  * Seeds two tenants, two users and one membership per tenant, and returns the
- * tenant ids. Runs as the owner so it can write without RLS interference.
+ * tenant ids.
  */
 async function seedTenantsAndMemberships(
   owner: DataSource,

@@ -38,16 +38,16 @@ export default async function globalSetup(): Promise<void> {
 
   const ownerUrl = container.getConnectionUri();
 
-  const appUrl = new URL(ownerUrl);
-  appUrl.username = 'ldms_app';
-  appUrl.password = 'ldms_app';
+  // Single-role deployment: application and migrations connect as the same
+  // role. Tenant isolation is enforced in the application layer.
+  const appUrl = ownerUrl;
 
   writeFileSync(
     STATE_FILE,
     JSON.stringify(
       {
         ownerUrl,
-        appUrl: appUrl.toString(),
+        appUrl,
         database: container.getDatabase(),
         containerId: container.getId(),
       },

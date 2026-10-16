@@ -1,5 +1,5 @@
 ﻿import { MigrationInterface, QueryRunner, Table, TableIndex } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 export class CreateBills1756000000017 implements MigrationInterface {
   name = 'CreateBills1756000000017';
@@ -34,7 +34,7 @@ export class CreateBills1756000000017 implements MigrationInterface {
       }),
     );
 
-    await enableTenantIsolation(queryRunner, 'bills');
+    await createTenantIndex(queryRunner, 'bills');
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

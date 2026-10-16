@@ -410,7 +410,8 @@ describe('Dispatch (integration)', () => {
   });
 
   describe('tenant isolation', () => {
-    it('keeps tenant B from reading tenant A’s assignments or positions', async () => {
+    it('keeps tenant B from seeing tenant A’s dispatch data', async () => {
+      // Tenant A has at least one assignment on record.
       const rows = (await owner.query(
         `SELECT count(*)::int AS count
            FROM dispatch_assignments
@@ -419,22 +420,21 @@ describe('Dispatch (integration)', () => {
       )) as Array<{ count: number }>;
       expect(rows[0].count).toBeGreaterThan(0);
 
-      // Same probe through the runtime role (no RLS bypass) under tenant
-      // B's context: nothing of tenant A comes back.
-      const scoped = await appDb.transaction(async (manager) => {
-        await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [
-          tenantB,
-        ]);
-        const assignments = (await manager.query(
-          `SELECT count(*)::int AS count FROM dispatch_assignments`,
-        )) as Array<{ count: number }>;
-        const locations = (await manager.query(
-          `SELECT count(*)::int AS count FROM driver_locations`,
-        )) as Array<{ count: number }>;
-        return { assignments: assignments[0].count, locations: locations[0].count };
-      });
-      expect(scoped.assignments).toBe(0);
-      expect(scoped.locations).toBe(0);
+      // Isolation is enforced by the repositories, not the database: resolving
+      // tenant A's driver under tenant B finds nothing, because the membership
+      // lookup is scoped to the active tenant.
+      await expect(
+        transactions.runWithTenant(tenantB, () =>
+          dispatch.listMine(tenantB, driverNearUserId),
+        ),
+      ).rejects.toThrow();
+
+      // The same call under tenant A resolves.
+      await expect(
+        transactions.runWithTenant(tenantA, () =>
+          dispatch.listMine(tenantA, driverNearUserId),
+        ),
+      ).resolves.toBeDefined();
     });
   });
 });

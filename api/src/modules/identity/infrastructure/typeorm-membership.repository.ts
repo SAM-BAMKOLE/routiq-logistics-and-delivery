@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import type { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import type { Repository } from 'typeorm';
+import { TenantContextService } from '../../../shared/tenancy/tenant-context.service.js';
 import type {
   CreateMembershipInput,
   Membership,
@@ -14,7 +15,7 @@ import type {
 import { MembershipMapper } from './membership.mapper.js';
 import { MembershipOrmEntity } from './membership.orm-entity.js';
 
-/** Row shape returned by the `list_user_memberships` function. */
+/** Row shape returned by the cross-tenant login lookup. */
 interface MembershipLookupRow {
   membership_id: string;
   tenant_id: string;
@@ -30,6 +31,7 @@ interface MembershipLookupRow {
 export class TypeOrmMembershipRepository implements MembershipRepository {
   constructor(
     private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>,
+    private readonly tenants: TenantContextService,
   ) {}
 
   async create(input: CreateMembershipInput): Promise<Membership> {
@@ -44,7 +46,9 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
   }
 
   async findById(id: string): Promise<Membership | null> {
-    const entity = await this.repository().findOne({ where: { id } });
+    const entity = await this.repository().findOne({
+      where: { id, ...this.tenants.scope() },
+    });
     return entity ? MembershipMapper.toDomain(entity) : null;
   }
 
@@ -71,7 +75,9 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
     changes: UpdateMembershipInput,
   ): Promise<Membership | null> {
     const repository = this.repository();
-    const entity = await repository.findOne({ where: { id } });
+    const entity = await repository.findOne({
+      where: { id, ...this.tenants.scope() },
+    });
     if (!entity) {
       return null;
     }
@@ -80,14 +86,25 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
   }
 
   /**
-   * Cross-tenant listing through the `list_user_memberships` SECURITY DEFINER
-   * function. Used by login, which has no tenant setting yet: plain queries
-   * would see nothing under RLS. Runs on the ambient manager (the transaction
-   * host's fallback outside a transaction).
+   * Cross-tenant listing for login, which runs before any tenant is known.
+   * The join is deliberately unfiltered by tenant: the caller authenticates
+   * the user first and then picks one of the memberships this returns.
    */
-  async listForUserAcrossTenants(userId: string): Promise<MembershipWithTenant[]> {
+  async listForUserAcrossTenants(
+    userId: string,
+  ): Promise<MembershipWithTenant[]> {
     const rows = (await this.txHost.tx.query(
-      `SELECT * FROM list_user_memberships($1)`,
+      `SELECT m.id AS membership_id,
+              m.tenant_id,
+              m.role,
+              m.status,
+              t.name AS tenant_name,
+              t.slug AS tenant_slug,
+              t.status AS tenant_status
+         FROM memberships m
+         JOIN tenants t ON t.id = m.tenant_id
+        WHERE m.user_id = $1
+        ORDER BY t.name ASC`,
       [userId],
     )) as MembershipLookupRow[];
 
@@ -98,7 +115,7 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
         userId,
         role: row.role as Membership['role'],
         status: row.status as Membership['status'],
-        // The function returns no timestamps; they are irrelevant for login.
+        // Timestamps are irrelevant for login.
         createdAt: new Date(0),
         updatedAt: new Date(0),
       },

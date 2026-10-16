@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import type { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
+import { TenantContextService } from '../../../shared/tenancy/tenant-context.service.js';
 import { Assignment, isAssignmentStatus } from '../domain/assignment.js';
 import type {
   AssignmentRepository,
@@ -12,13 +13,15 @@ import { AssignmentOrmEntity } from './assignment.orm-entity.js';
 /**
  * TypeORM implementation of the {@link AssignmentRepository} port. Besides
  * CRUD it owns the two queries that make dispatch work: the PostGIS
- * candidate search and the lazy-overdue scan. Everything runs inside the
- * tenant transaction, so RLS scopes every table the joins touch.
+ * candidate search and the lazy-overdue scan. Every query pins `tenant_id`;
+ * the candidate search takes the tenant explicitly (its joins span five
+ * tables), while the rest read it from the request context.
  */
 @Injectable()
 export class TypeOrmAssignmentRepository implements AssignmentRepository {
   constructor(
     private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>,
+    private readonly tenants: TenantContextService,
   ) {}
 
   async insert(assignment: Assignment): Promise<void> {
@@ -40,7 +43,7 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
   async save(assignment: Assignment): Promise<void> {
     await this.manager().update(
       AssignmentOrmEntity,
-      { id: assignment.id },
+      { id: assignment.id, ...this.tenants.scope() },
       {
         status: assignment.status,
         respondedAt: assignment.respondedAt,
@@ -51,26 +54,30 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
 
   async findById(id: string): Promise<Assignment | null> {
     const entity = await this.manager().findOne(AssignmentOrmEntity, {
-      where: { id },
+      where: { id, ...this.tenants.scope() },
     });
     return entity ? toDomain(entity) : null;
   }
 
   async findLiveByShipment(shipmentId: string): Promise<Assignment[]> {
-    const entities = await this.manager()
+    const query = this.manager()
       .getRepository(AssignmentOrmEntity)
       .createQueryBuilder('assignment')
       .where('assignment.shipment_id = :shipmentId', { shipmentId })
       .andWhere('assignment.status IN (:...statuses)', {
         statuses: ['offered', 'accepted'],
-      })
-      .getMany();
+      });
+    const tenantId = this.tenants.getTenantId();
+    if (tenantId !== undefined) {
+      query.andWhere('assignment.tenant_id = :tenantId', { tenantId });
+    }
+    const entities = await query.getMany();
     return entities.map(toDomain);
   }
 
   async listByDriver(driverId: string): Promise<Assignment[]> {
     const entities = await this.manager().find(AssignmentOrmEntity, {
-      where: { driverId },
+      where: { driverId, ...this.tenants.scope() },
       order: { offeredAt: 'DESC' },
     });
     return entities.map(toDomain);
@@ -118,18 +125,22 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
           SELECT COUNT(*)
             FROM dispatch_assignments da
            WHERE da.driver_id = d.id
+             AND da.tenant_id = $1
              AND da.status IN ('offered', 'accepted')
         )::int AS active_assignments,
         COALESCE(own_fit.id, free_fit.id) AS vehicle_id,
         COALESCE(own_fit.slack, free_fit.slack) AS capacity_slack
       FROM drivers d
       JOIN LATERAL (
-        SELECT a.location FROM addresses a WHERE a.id = $2
+        SELECT a.location FROM addresses a
+         WHERE a.id = $2
+           AND a.tenant_id = $1
       ) pickup ON TRUE
       LEFT JOIN LATERAL (
         SELECT dl.location
           FROM driver_locations dl
          WHERE dl.driver_id = d.id
+           AND dl.tenant_id = $1
          ORDER BY dl.recorded_at DESC
          LIMIT 1
       ) loc ON TRUE
@@ -146,6 +157,7 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
           ) AS slack
           FROM vehicles v
          WHERE v.id = d.current_vehicle_id
+           AND v.tenant_id = $1
            AND v.status = 'active'
            AND v.capacity_weight_kg >= $3::double precision
            AND (
@@ -154,7 +166,9 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
            )
            AND NOT EXISTS (
              SELECT 1 FROM dispatch_assignments da
-              WHERE da.vehicle_id = v.id AND da.status IN ('offered', 'accepted')
+              WHERE da.vehicle_id = v.id
+                AND da.tenant_id = $1
+                AND da.status IN ('offered', 'accepted')
            )
       ) own_fit ON TRUE
       LEFT JOIN LATERAL (
@@ -170,6 +184,7 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
           ) AS slack
           FROM vehicles v
          WHERE v.status = 'active'
+           AND v.tenant_id = $1
            AND v.capacity_weight_kg >= $3::double precision
            AND (
              v.capacity_volume_m3 IS NULL OR $4::double precision IS NULL
@@ -178,7 +193,9 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
            AND v.id <> COALESCE(own_fit.id, '00000000-0000-0000-0000-000000000000'::uuid)
            AND NOT EXISTS (
              SELECT 1 FROM dispatch_assignments da
-              WHERE da.vehicle_id = v.id AND da.status IN ('offered', 'accepted')
+              WHERE da.vehicle_id = v.id
+                AND da.tenant_id = $1
+                AND da.status IN ('offered', 'accepted')
            )
          ORDER BY v.capacity_weight_kg ASC
          LIMIT 1
@@ -188,22 +205,28 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
         AND d.availability = 'available'
         AND NOT EXISTS (
           SELECT 1 FROM dispatch_assignments da
-           WHERE da.driver_id = d.id AND da.status IN ('offered', 'accepted')
+           WHERE da.driver_id = d.id
+             AND da.tenant_id = $1
+             AND da.status IN ('offered', 'accepted')
         )
         AND (
           EXISTS (
             SELECT 1 FROM driver_shifts s
              WHERE s.driver_id = d.id
+               AND s.tenant_id = $1
                AND s.starts_at <= now()
                AND s.ends_at >= now()
           )
           OR NOT EXISTS (
-            SELECT 1 FROM driver_shifts s WHERE s.driver_id = d.id
+            SELECT 1 FROM driver_shifts s
+             WHERE s.driver_id = d.id
+               AND s.tenant_id = $1
           )
         )
         AND EXISTS (
           SELECT 1 FROM vehicles v
            WHERE v.status = 'active'
+             AND v.tenant_id = $1
              AND v.capacity_weight_kg >= $3::double precision
              AND (
                v.capacity_volume_m3 IS NULL OR $4::double precision IS NULL
@@ -211,7 +234,9 @@ export class TypeOrmAssignmentRepository implements AssignmentRepository {
              )
              AND NOT EXISTS (
                SELECT 1 FROM dispatch_assignments da
-                WHERE da.vehicle_id = v.id AND da.status IN ('offered', 'accepted')
+                WHERE da.vehicle_id = v.id
+                  AND da.tenant_id = $1
+                  AND da.status IN ('offered', 'accepted')
              )
         )
       ORDER BY d.id

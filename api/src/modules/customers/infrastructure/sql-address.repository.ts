@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import type { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import type { EntityManager } from 'typeorm';
+import { TenantContextService } from '../../../shared/tenancy/tenant-context.service.js';
 import type {
   Address,
   CreateAddressInput,
@@ -41,13 +42,13 @@ const ADDRESS_COLUMNS = `
  * values, so coordinates bypass the ORM: writes use `ST_MakePoint` and reads
  * extract with `ST_X`/`ST_Y`. Everything stays behind the repository port, so
  * the domain never sees SQL, and every statement is parameterized — never
- * string concatenation. RLS applies to raw SQL exactly as it does to ORM
- * queries, since both run on the transaction's manager.
+ * string concatenation.
  */
 @Injectable()
 export class SqlAddressRepository implements AddressRepository {
   constructor(
     private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>,
+    private readonly tenants: TenantContextService,
   ) {}
 
   async create(
@@ -82,19 +83,22 @@ export class SqlAddressRepository implements AddressRepository {
   }
 
   async findById(id: string): Promise<Address | null> {
+    const params: unknown[] = [id];
     const rows = (await this.manager().query(
-      `SELECT ${ADDRESS_COLUMNS} FROM "addresses" WHERE "id" = $1`,
-      [id],
+      `SELECT ${ADDRESS_COLUMNS} FROM "addresses"
+        WHERE "id" = $1${this.tenantPredicate(params)}`,
+      params,
     )) as AddressRow[];
     return rows.length > 0 ? toDomain(rows[0]) : null;
   }
 
   async listByCustomer(customerId: string): Promise<Address[]> {
+    const params: unknown[] = [customerId];
     const rows = (await this.manager().query(
       `SELECT ${ADDRESS_COLUMNS} FROM "addresses"
-        WHERE "customer_id" = $1
+        WHERE "customer_id" = $1${this.tenantPredicate(params)}
         ORDER BY "created_at" ASC`,
-      [customerId],
+      params,
     )) as AddressRow[];
     return rows.map(toDomain);
   }
@@ -146,7 +150,7 @@ export class SqlAddressRepository implements AddressRepository {
     const rows = normalizeRows<AddressRow>(
       await this.manager().query(
         `UPDATE "addresses" SET ${sets.join(', ')}, "updated_at" = now()
-        WHERE "id" = $${index}
+        WHERE "id" = $${index}${this.tenantPredicate(params)}
        RETURNING ${ADDRESS_COLUMNS}`,
         params,
       ),
@@ -155,13 +159,30 @@ export class SqlAddressRepository implements AddressRepository {
   }
 
   async remove(id: string): Promise<boolean> {
+    const params: unknown[] = [id];
     const rows = normalizeRows<{ id: string }>(
       await this.manager().query(
-        `DELETE FROM "addresses" WHERE "id" = $1 RETURNING "id"`,
-        [id],
+        `DELETE FROM "addresses"
+          WHERE "id" = $1${this.tenantPredicate(params)}
+        RETURNING "id"`,
+        params,
       ),
     );
     return rows.length > 0;
+  }
+
+  /**
+   * Appends a tenant predicate to the running parameter list and returns the
+   * SQL fragment (` AND "tenant_id" = $n`), or an empty string when no tenant
+   * is active. Mutating `params` keeps the placeholder index in sync.
+   */
+  private tenantPredicate(params: unknown[]): string {
+    const tenantId = this.tenants.getTenantId();
+    if (tenantId === undefined) {
+      return '';
+    }
+    params.push(tenantId);
+    return ` AND "tenant_id" = $${params.length}`;
   }
 
   private manager(): EntityManager {

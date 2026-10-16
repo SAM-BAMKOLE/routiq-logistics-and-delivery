@@ -1,5 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { enableTenantIsolation } from '../rls.js';
+import { createTenantIndex } from '../tenant-index.js';
 
 /**
  * The shipment aggregate: the shipment row, its line items, and the
@@ -18,8 +18,8 @@ import { enableTenantIsolation } from '../rls.js';
  *   retries after the tenant-configured limit.
  * - `version` is the optimistic-lock column; the API exposes it as an ETag
  *   and requires it back in `If-Match` on every state-changing action.
- * - The history table is append-only: `UPDATE` and `DELETE` are revoked from
- *   the runtime role, so the audit trail can only ever grow.
+ * - The history table is append-only by application convention: no code path
+ *   issues `UPDATE` or `DELETE` against it, so the audit trail only grows.
  */
 export class CreateShipments1756000000011 implements MigrationInterface {
   name = 'CreateShipments1756000000011';
@@ -60,7 +60,7 @@ export class CreateShipments1756000000011 implements MigrationInterface {
       CREATE INDEX "idx_shipments_tenant_customer"
         ON "shipments" ("tenant_id", "customer_id")
     `);
-    await enableTenantIsolation(queryRunner, 'shipments');
+    await createTenantIndex(queryRunner, 'shipments');
 
     await queryRunner.query(`
       CREATE TABLE "shipment_items" (
@@ -80,7 +80,7 @@ export class CreateShipments1756000000011 implements MigrationInterface {
       CREATE INDEX "idx_shipment_items_shipment_id"
         ON "shipment_items" ("shipment_id")
     `);
-    await enableTenantIsolation(queryRunner, 'shipment_items');
+    await createTenantIndex(queryRunner, 'shipment_items');
 
     await queryRunner.query(`
       CREATE TABLE "shipment_status_history" (
@@ -101,18 +101,13 @@ export class CreateShipments1756000000011 implements MigrationInterface {
       CREATE INDEX "idx_shipment_status_history_shipment_id"
         ON "shipment_status_history" ("shipment_id")
     `);
-    await enableTenantIsolation(queryRunner, 'shipment_status_history');
-    // Append-only audit trail: the runtime role may insert but never rewrite
-    // or erase the past. The owner keeps full rights for migrations.
-    await queryRunner.query(
-      `REVOKE UPDATE, DELETE ON "shipment_status_history" FROM ldms_app`,
-    );
+    await createTenantIndex(queryRunner, 'shipment_status_history');
+    // Append-only audit trail: rows are only ever inserted. With a single
+    // database role the database cannot enforce this with grants, so the
+    // application never issues UPDATE or DELETE against this table.
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `GRANT UPDATE, DELETE ON "shipment_status_history" TO ldms_app`,
-    );
     await queryRunner.query(`DROP TABLE "shipment_status_history"`);
     await queryRunner.query(`DROP TABLE "shipment_items"`);
     await queryRunner.query(`DROP TABLE "shipments"`);
