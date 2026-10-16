@@ -1,0 +1,71 @@
+name: Simulate bots
+
+# Drives the bot fleet against the deployed API on a schedule. Each tick is an
+# independent run, so a failure on one (e.g. a sleeping host) never stops the
+# next one — the bots warm the API up and retry transient failures.
+#
+# Required configuration (repository settings):
+#   Variable  ROUTIQ_API_URL              e.g. https://routiq.example.com/api/v1
+#   Secret    ROUTIQ_SEED_MANIFEST_JSON   the contents of api/.demo-seed.json
+#   Secret    ROUTIQ_DEMO_PASSWORD        demo password (default Passw0rd!demo)
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub's cron is best-effort: runs can be delayed and
+    # are skipped during periods of high load, so don't treat this as exact.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: Lifecycle rounds to run
+        required: false
+        default: '1'
+      companies:
+        description: Comma-separated tenant slugs (blank = all)
+        required: false
+        default: ''
+
+# Never let two simulations overlap and double-book; a new tick waits its turn.
+concurrency:
+  group: simulate-bots
+  cancel-in-progress: false
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    # A cold start can take minutes; give the warm-up room but cap the job.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: bots/pnpm-lock.yaml
+
+      - name: Install bot dependencies
+        working-directory: bots
+        run: pnpm install --frozen-lockfile
+
+      - name: Run the bot fleet
+        working-directory: bots
+        env:
+          ROUTIQ_API_URL: ${{ vars.ROUTIQ_API_URL }}
+          ROUTIQ_SEED_MANIFEST_JSON: ${{ secrets.ROUTIQ_SEED_MANIFEST_JSON }}
+          ROUTIQ_DEMO_PASSWORD: ${{ secrets.ROUTIQ_DEMO_PASSWORD }}
+          # Wait up to 5 minutes for a sleeping host to boot, then start.
+          ROUTIQ_BOT_WARMUP_SECONDS: '300'
+          # Retry each transient request (cold start, gateway, throttling).
+          ROUTIQ_BOT_HTTP_RETRIES: '6'
+        run: |
+          ARGS="--rounds ${{ github.event.inputs.rounds || '1' }}"
+          if [ -n "${{ github.event.inputs.companies }}" ]; then
+            ARGS="$ARGS --companies ${{ github.event.inputs.companies }}"
+          fi
+          pnpm simulate $ARGS

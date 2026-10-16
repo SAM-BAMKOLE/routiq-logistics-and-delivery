@@ -1,4 +1,4 @@
-import type { Logger } from './logger.js';
+import { sleep, type Logger } from './logger.js';
 import type { AuthResponse } from './types.js';
 
 /**
@@ -36,6 +36,24 @@ interface RequestOptions {
   ifMatch?: string | number;
   auth?: boolean;
 }
+
+/**
+ * Statuses worth retrying: a host that is spinning up (502/503/504), a gateway
+ * timeout, or throttling. A 4xx is the API answering — retrying it would just
+ * repeat the mistake.
+ */
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
+
+/** Total attempts per request, including the first. Overridable for tests. */
+const MAX_ATTEMPTS = Math.max(1, Number(process.env.ROUTIQ_BOT_HTTP_RETRIES ?? 6));
+
+/** Per-attempt ceiling, so one hung request cannot wedge a whole run. */
+const REQUEST_TIMEOUT_MS = Math.max(
+  1_000,
+  Number(process.env.ROUTIQ_BOT_HTTP_TIMEOUT_MS ?? 30_000),
+);
+
+const MAX_BACKOFF_MS = 15_000;
 
 /**
  * A small, dependency-free client for the Routiq API. It owns one identity's
@@ -92,24 +110,66 @@ export class RoutiqClient {
       headers.authorization = `Bearer ${this.accessToken}`;
     }
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
+    // A free-tier host spins down when idle: the first request after a while is
+    // expected to fail while it boots, and a later attempt succeeds. Retry
+    // transient failures with backoff instead of aborting the run.
+    for (let attempt = 1; ; attempt += 1) {
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method,
+          headers,
+          body: options.body === undefined ? undefined : JSON.stringify(options.body),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+      } catch (error) {
+        if (attempt < MAX_ATTEMPTS) {
+          await this.backoff(method, path, attempt, describe(error));
+          continue;
+        }
+        throw error;
+      }
 
-    if (response.status === 401 && allowRefresh && options.auth !== false && this.refreshToken) {
-      const refreshed = await this.tryRefresh();
-      if (refreshed) return this.request<T>(method, path, options, false);
+      if (response.status === 401 && allowRefresh && options.auth !== false && this.refreshToken) {
+        const refreshed = await this.tryRefresh();
+        if (refreshed) return this.request<T>(method, path, options, false);
+      }
+
+      if (RETRYABLE_STATUSES.has(response.status) && attempt < MAX_ATTEMPTS) {
+        await this.backoff(
+          method,
+          path,
+          attempt,
+          `HTTP ${response.status}`,
+          retryAfterMs(response.headers.get('retry-after')),
+        );
+        continue;
+      }
+
+      const raw = await response.text();
+      const parsed = raw.length > 0 ? safeJson(raw) : null;
+
+      if (!response.ok) {
+        throw new ApiError(response.status, (parsed as ProblemDetails | null) ?? null, method, path);
+      }
+      return parsed as T;
     }
+  }
 
-    const raw = await response.text();
-    const parsed = raw.length > 0 ? safeJson(raw) : null;
-
-    if (!response.ok) {
-      throw new ApiError(response.status, (parsed as ProblemDetails | null) ?? null, method, path);
-    }
-    return parsed as T;
+  /** Exponential backoff, capped, honouring `Retry-After` when the server sent one. */
+  private async backoff(
+    method: string,
+    path: string,
+    attempt: number,
+    reason: string,
+    retryAfter?: number,
+  ): Promise<void> {
+    const delay = Math.min(retryAfter ?? 2 ** (attempt - 1) * 1_000, MAX_BACKOFF_MS);
+    this.log?.warn(
+      `${method} ${path} failed (${reason}); retrying in ${Math.round(delay / 1_000)}s`,
+      `attempt ${attempt}/${MAX_ATTEMPTS}`,
+    );
+    await sleep(delay);
   }
 
   /** Rotates the refresh token and swaps in a new access token. */
@@ -150,4 +210,17 @@ function safeJson(raw: string): unknown {
   } catch {
     return null;
   }
+}
+
+/** Reads `Retry-After` as either delta-seconds or an HTTP date. */
+function retryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1_000);
+  const date = Date.parse(header);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

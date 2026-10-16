@@ -55,8 +55,11 @@ const DEFAULT_MANIFEST = fileURLToPath(new URL('../../api/.demo-seed.json', impo
  * variables so the bots can also target a deployed API.
  */
 export function loadConfig(): BotConfig {
+  // A file path suits local runs; the raw JSON suits CI, where the manifest is
+  // a secret and writing a file just to read it back is pointless.
+  const inline = process.env.ROUTIQ_SEED_MANIFEST_JSON?.trim();
   const manifestPath = process.env.ROUTIQ_SEED_MANIFEST?.trim() || DEFAULT_MANIFEST;
-  const manifest = readManifest(manifestPath);
+  const manifest = inline ? parseManifest(inline) : readManifest(manifestPath);
 
   const apiBaseUrl =
     process.env.ROUTIQ_API_URL?.trim() ||
@@ -68,8 +71,11 @@ export function loadConfig(): BotConfig {
 
   if (!manifest) {
     throw new Error(
-      `No seed manifest found at ${manifestPath}.\n` +
-        'Run `pnpm db:seed:demo` in the api package first, or set ROUTIQ_SEED_MANIFEST.',
+      inline
+        ? 'ROUTIQ_SEED_MANIFEST_JSON is set but is not a valid manifest.'
+        : `No seed manifest found at ${manifestPath}.\n` +
+            'Run `pnpm db:seed:demo` in the api package first, or set ' +
+            'ROUTIQ_SEED_MANIFEST (a path) or ROUTIQ_SEED_MANIFEST_JSON (inline JSON).',
     );
   }
   if (manifest.companies.length === 0) {
@@ -82,6 +88,14 @@ export function loadConfig(): BotConfig {
 function readManifest(path: string): SeedManifest | null {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as SeedManifest;
+  } catch {
+    return null;
+  }
+}
+
+function parseManifest(raw: string): SeedManifest | null {
+  try {
+    return JSON.parse(raw) as SeedManifest;
   } catch {
     return null;
   }

@@ -10,12 +10,14 @@ import { runCompanyScenario, type ScenarioResult } from './scenario.js';
  *   pnpm simulate --rounds 5            # five rounds, 15s apart
  *   pnpm simulate --companies swift-express
  *   pnpm simulate --rounds 0            # loop until Ctrl+C
+ *   pnpm simulate --warmup 300          # wait up to 5min for a cold host
  */
 const { values } = parseArgs({
   options: {
     companies: { type: 'string' },
     rounds: { type: 'string' },
     interval: { type: 'string' },
+    warmup: { type: 'string' },
     parallel: { type: 'boolean' },
   },
 });
@@ -24,6 +26,16 @@ const intervalSeconds = Number(values.interval ?? process.env.ROUTIQ_BOT_INTERVA
 const roundsArg = Number(values.rounds ?? process.env.ROUTIQ_BOT_ROUNDS ?? 1);
 const infinite = Number.isNaN(roundsArg) || roundsArg <= 0;
 const parallel = values.parallel ?? false;
+
+/**
+ * How long to wait for the API to answer before giving up, in seconds. A host
+ * that spun down takes tens of seconds to boot, and the first request is
+ * expected to fail; the warm-up absorbs that instead of ending the run.
+ */
+const warmupSeconds = Math.max(
+  0,
+  Number(values.warmup ?? process.env.ROUTIQ_BOT_WARMUP_SECONDS ?? 300),
+);
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -42,7 +54,7 @@ async function main(): Promise<void> {
     );
   }
 
-  await assertApiReachable(config.apiBaseUrl, log);
+  await waitForApi(config.apiBaseUrl, log);
 
   log.info(`API → ${config.apiBaseUrl}`);
   log.info(
@@ -85,19 +97,46 @@ async function main(): Promise<void> {
   printSummary(results, log);
 }
 
-async function assertApiReachable(baseUrl: string, log: Logger): Promise<void> {
+/**
+ * Polls the health endpoint until the API answers, tolerating a sleeping host.
+ *
+ * A cold start is not an error: the first probe fails while the instance boots
+ * and a later one succeeds, so we keep probing for up to `warmupSeconds` and
+ * only give up when the budget is spent. Giving up exits non-zero so the
+ * scheduler re-runs later; it does not stop anything already running.
+ */
+async function waitForApi(baseUrl: string, log: Logger): Promise<void> {
   const healthUrl = new URL(baseUrl);
   healthUrl.pathname = '/health/live';
   healthUrl.search = '';
-  try {
-    const response = await fetch(healthUrl, { signal: AbortSignal.timeout(5_000) });
-    if (!response.ok) throw new Error(`status ${response.status}`);
-  } catch (error) {
-    log.error(`API is not reachable at ${healthUrl}`);
-    log.error(error instanceof Error ? error.message : String(error));
-    log.info('Start it with `pnpm start:dev` (or deploy it) and try again.');
-    process.exit(1);
+
+  const deadline = Date.now() + warmupSeconds * 1_000;
+  let attempt = 0;
+
+  for (;;) {
+    attempt += 1;
+    try {
+      const response = await fetch(healthUrl, { signal: AbortSignal.timeout(10_000) });
+      if (response.ok) {
+        if (attempt > 1) log.ok(`API awake`, `after ${attempt - 1} cold-start probe(s)`);
+        return;
+      }
+      log.warn(`API not ready yet (status ${response.status})`, `probe ${attempt}`);
+    } catch (error) {
+      log.warn('API not reachable yet', `probe ${attempt}: ${describe(error)}`);
+    }
+
+    if (Date.now() >= deadline) {
+      log.error(`API still not reachable after ${warmupSeconds}s; ending this run`);
+      log.info('A later scheduled run will retry once the host has spun up.');
+      process.exit(1);
+    }
+    await sleep(Math.min(2_000 * attempt, 15_000));
   }
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function printSummary(results: ScenarioResult[], log: Logger): void {
