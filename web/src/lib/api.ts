@@ -181,6 +181,11 @@ export class ApiClient {
     return this.send<T>(path, { method: "PATCH", body });
   }
 
+  /** For 204 responses the resolved value is `null`. */
+  delete<T>(path: string): Promise<T> {
+    return this.send<T>(path, { method: "DELETE" });
+  }
+
   private async send<T>(
     path: string,
     options: SendOptions,
