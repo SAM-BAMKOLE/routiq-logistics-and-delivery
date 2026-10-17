@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, Plus, RefreshCw } from "lucide-react";
 import { EmptyState, ErrorState, PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { roleHasPermission } from "@/lib/permissions";
+import { useSession } from "@/lib/session";
 import type { Customer, Shipment, ShipmentStatus } from "@/lib/types";
 import { useApiQuery } from "@/lib/use-api-query";
 
@@ -40,6 +42,8 @@ interface ShipmentsData {
 
 export default function ShipmentsPage() {
   const [filter, setFilter] = useState<string>("ALL");
+  const { session } = useSession();
+  const canCreate = roleHasPermission(session?.tenant?.role, "shipments:create");
 
   const { data, loading, error, reload } = useApiQuery<ShipmentsData>(
     async (api) => {
@@ -68,10 +72,21 @@ export default function ShipmentsPage() {
         title="Shipments"
         description="Every shipment visible to your role, newest first."
         action={
-          <Button variant="outline" onClick={() => void reload()}>
-            <RefreshCw className="size-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {canCreate ? (
+              <Link
+                href="/shipments/new"
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Plus className="size-4" />
+                New shipment
+              </Link>
+            ) : null}
+            <Button variant="outline" onClick={() => void reload()}>
+              <RefreshCw className="size-4" />
+              Refresh
+            </Button>
+          </div>
         }
       />
 

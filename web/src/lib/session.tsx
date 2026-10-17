@@ -18,6 +18,13 @@ interface SessionContextValue {
   session: SessionState | null;
   api: ApiClient;
   login: (email: string, password: string, tenantId?: string) => Promise<AuthResponse>;
+  register: (input: {
+    companyName: string;
+    name?: string;
+    email: string;
+    password: string;
+  }) => Promise<AuthResponse>;
+  acceptInvite: (token: string, password: string) => Promise<AuthResponse>;
   switchTenant: (tenantId: string) => Promise<AuthResponse>;
   logout: () => Promise<void>;
 }
@@ -100,9 +107,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setReady(true);
   }, []);
 
-  const login = React.useCallback(
-    async (email: string, password: string, tenantId?: string) => {
-      const auth = await api.login(email, password, tenantId);
+  const applyAuth = React.useCallback(
+    (auth: AuthResponse) => {
       updateSession({
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
@@ -111,21 +117,34 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       });
       return auth;
     },
-    [api, updateSession],
+    [updateSession],
+  );
+
+  const login = React.useCallback(
+    async (email: string, password: string, tenantId?: string) =>
+      applyAuth(await api.login(email, password, tenantId)),
+    [api, applyAuth],
+  );
+
+  const register = React.useCallback(
+    async (input: {
+      companyName: string;
+      name?: string;
+      email: string;
+      password: string;
+    }) => applyAuth(await api.register(input)),
+    [api, applyAuth],
+  );
+
+  const acceptInvite = React.useCallback(
+    async (token: string, password: string) =>
+      applyAuth(await api.acceptInvite(token, password)),
+    [api, applyAuth],
   );
 
   const switchTenant = React.useCallback(
-    async (tenantId: string) => {
-      const auth = await api.switchTenant(tenantId);
-      updateSession({
-        accessToken: auth.accessToken,
-        refreshToken: auth.refreshToken,
-        user: auth.user,
-        tenant: auth.tenant,
-      });
-      return auth;
-    },
-    [api, updateSession],
+    async (tenantId: string) => applyAuth(await api.switchTenant(tenantId)),
+    [api, applyAuth],
   );
 
   const logout = React.useCallback(async () => {
@@ -134,8 +153,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [api, updateSession]);
 
   const value = React.useMemo<SessionContextValue>(
-    () => ({ ready, session, api, login, switchTenant, logout }),
-    [ready, session, api, login, switchTenant, logout],
+    () => ({
+      ready,
+      session,
+      api,
+      login,
+      register,
+      acceptInvite,
+      switchTenant,
+      logout,
+    }),
+    [ready, session, api, login, register, acceptInvite, switchTenant, logout],
   );
 
   return (

@@ -138,6 +138,17 @@ bootstrapped once with:
 pnpm db:seed:platform-admin --email ops@example.com --password '…' [--name '…']
 ```
 
+### Self-service company sign-up
+
+`POST /auth/register` (public) creates a company without a platform admin in the
+loop: it mints the tenant with a derived slug, gives it a default rate card
+(`Standard rate`) so the very first booking can be quoted, and provisions the
+caller as its `tenant_admin`, returning an ordinary logged-in session. This is
+the one orchestration that spans the tenant registry, pricing, and identity, so
+it lives in its own `OnboardingModule` (`src/modules/onboarding/`) rather than
+inverting any of those dependencies. A duplicate email is a
+`EMAIL_TAKEN` 409; a slug collision is resolved with a short random suffix.
+
 ## Identity and RBAC
 
 The `IdentityModule` (`src/modules/identity/`) owns users, memberships,
@@ -153,10 +164,14 @@ credentials, and tokens:
   same user, rotating the refresh token as well.
 - Invitations are single-use hashed tokens (`POST /users/invitations` →
   `POST /auth/accept-invite`, which sets the password and auto-logs-in).
-  The raw token is no longer returned in an HTTP response: the invite
-  travels as a branded email through the Notifications module, and the
-  e2e suites read it out of the in-memory mailbox. Acceptance marks the
-  address verified, so no separate verification flow exists yet.
+  The raw token is not returned in an HTTP response: the invite travels as a
+  branded email through the Notifications module, and the e2e suites read it
+  out of the in-memory mailbox. The one exception is the `console` mail
+  adapter (local/demo, where nothing is actually sent): there the response
+  also carries a copyable `inviteUrl`, since the inviter is already
+  authorized to grant access and a dead link would otherwise be a dead end.
+  Acceptance marks the address verified, so no separate verification flow
+  exists yet.
 - Password recovery: `POST /auth/forgot-password` always answers 202 with
   the same body (no account enumeration); known addresses get a
   one-hour, single-use link. `POST /auth/reset-password` consumes it,
@@ -454,6 +469,7 @@ src/
   database/               # data source, naming strategy, migrations, tenant index helper
   health/                 # liveness and readiness probes
   modules/tenants/        # tenant registry (domain/app/infrastructure/presentation)
+  modules/onboarding/     # self-service company sign-up (tenant + rate card + admin)
   modules/identity/       # users, memberships, auth, RBAC guards
   modules/customers/      # customer profiles and saved addresses
   modules/fleet/          # vehicles

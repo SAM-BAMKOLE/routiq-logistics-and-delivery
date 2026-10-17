@@ -9,13 +9,22 @@ no server-side session, no secrets.
 | Route | Purpose |
 | --- | --- |
 | `/login` | Email + password sign-in against `POST /auth/login`. Seeded demo accounts are listed for one-click fill. |
+| `/register` | Public company sign-up (`POST /auth/register`): creates a tenant, its first admin, and a default rate card. |
+| `/accept-invite` | Set a password from an invitation link (`POST /auth/accept-invite`). |
+| `/forgot-password` | Request a reset link (`POST /auth/forgot-password`). |
+| `/reset-password` | Choose a new password from the emailed link (`POST /auth/reset-password`). |
 | `/dashboard` | Snapshot: shipment counts, delivered value, drivers on shift, recent shipments. |
-| `/shipments` | Shipment list with client-side status filter. |
+| `/shipments` | Shipment list with client-side status filter and a **New shipment** action. |
+| `/shipments/new` | Booking flow: pick a customer and two saved addresses (create either inline), enter the parcel, book, then confirm the quoted shipment. |
 | `/shipments/[id]` | Detail, status timeline, public-tracking link, and `confirm` / `cancel` actions (sent with `If-Match`). |
+| `/team` | Members and roles: invite by email, change a member's role, suspend/reactivate (tenant admins). Shows a copyable invite link when email delivery is disabled. |
 | `/drivers` | Driver profiles with status, availability and current vehicle. |
 | `/customers` | Customer list; expand a row to lazy-load its saved addresses. |
 | `/tracking` | The anonymous `GET /public/tracking/:number?token=…` lookup, prefillable via `?number=&token=`. |
 | `/pricing` | Rate cards (base fee, per-km, per-kg, minimum, priority). |
+
+Navigation is role-aware (see `src/lib/permissions.ts`): the sidebar mirrors the
+API's role→permission map so drivers and dispatchers only see what they can open.
 
 Auth tokens live in `localStorage` (see `src/lib/session.tsx`) and the API
 client refreshes them transparently on a 401. This is fine for the demo; a

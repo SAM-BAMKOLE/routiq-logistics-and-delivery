@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -63,6 +64,19 @@ export interface ActiveTenant {
   name: string;
   slug: string;
   role: Role;
+}
+
+/**
+ * Input for self-service company sign-up: the freshly created tenant plus the
+ * credentials of the person who will administer it.
+ */
+export interface RegisterTenantAdminInput {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  email: string;
+  password: string;
+  name?: string | null;
 }
 
 /** Invitation lifetime: 7 days. */
@@ -287,12 +301,69 @@ export class AuthService {
 
     await this.oneTimeTokens.markUsed(row.id);
 
+    // The membership alone carries no tenant identity, so look the tenant up
+    // to return a complete session (otherwise the client would show a blank
+    // company name until its next refresh).
+    const withTenants = await this.memberships.listForUserAcrossTenants(
+      user.id,
+    );
+    const info = withTenants.find(
+      (entry) => entry.membership.tenantId === tenantId,
+    );
+
     return this.issueSession(
       user,
       {
         membership,
-        tenantName: '',
-        tenantSlug: '',
+        tenantName: info?.tenantName ?? '',
+        tenantSlug: info?.tenantSlug ?? '',
+        tenantStatus: info?.tenantStatus ?? 'active',
+      },
+      randomUUID(),
+      null,
+    );
+  }
+
+  /**
+   * Provisions the first administrator of a new tenant and returns a ready
+   * session. This is the self-service counterpart to the platform-admin +
+   * invitation flow: it backs public company sign-up, where the founder both
+   * creates the company and becomes its `tenant_admin` in one step.
+   */
+  async registerTenantAdmin(
+    input: RegisterTenantAdminInput,
+  ): Promise<AuthResult> {
+    const email = normalizeEmail(input.email);
+    if (await this.users.findByEmail(email)) {
+      throw emailTaken();
+    }
+
+    const user = await this.users.create({
+      email,
+      name: input.name ?? null,
+      passwordHash: await this.passwords.hash(input.password),
+    });
+    await this.users.markEmailVerified(user.id);
+
+    // Scope the membership write to its tenant, so it behaves exactly like
+    // every other membership created inside a tenant.
+    const membership = await this.transactions.runWithTenant(
+      input.tenantId,
+      async () =>
+        this.memberships.create({
+          tenantId: input.tenantId,
+          userId: user.id,
+          role: 'tenant_admin',
+          status: 'active',
+        }),
+    );
+
+    return this.issueSession(
+      user,
+      {
+        membership,
+        tenantName: input.tenantName,
+        tenantSlug: input.tenantSlug,
         tenantStatus: 'active',
       },
       randomUUID(),
@@ -435,6 +506,13 @@ function invalidCredentials(): UnauthorizedException {
   return new UnauthorizedException({
     message: 'The email or password is incorrect.',
     code: 'INVALID_CREDENTIALS',
+  });
+}
+
+function emailTaken(): ConflictException {
+  return new ConflictException({
+    message: 'An account already exists for this email address.',
+    code: 'EMAIL_TAKEN',
   });
 }
 

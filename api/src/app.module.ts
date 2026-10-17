@@ -29,6 +29,7 @@ import { AssetsModule } from './modules/assets/assets.module.js';
 import { ComplianceModule } from './modules/compliance/compliance.module.js';
 import { HardeningModule } from './modules/hardening/hardening.module.js';
 import { TenantsModule } from './modules/tenants/tenants.module.js';
+import { OnboardingModule } from './modules/onboarding/onboarding.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { MessagingModule } from './shared/messaging/messaging.module.js';
 import { TenancyModule } from './shared/tenancy/tenancy.module.js';
@@ -83,6 +84,7 @@ import { validate } from './config/env.validation.js';
     FleetModule,
     DriversModule,
     PricingModule,
+    OnboardingModule,
     ShipmentsModule,
     DispatchModule,
     RoutingModule,

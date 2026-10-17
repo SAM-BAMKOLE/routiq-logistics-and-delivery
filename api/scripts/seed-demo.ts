@@ -1,10 +1,10 @@
 /**
  * Provisions a complete, repeatable demo dataset.
  *
- * The API deliberately has no self-service sign-up: tenants are created by a
- * platform admin and the first membership of each tenant is bootstrapped
- * out-of-band. That makes onboarding awkward for demos, so this script is the
- * single, idempotent way to stand up:
+ * The API can now onboard a company through public sign-up
+ * (`POST /auth/register`, which also mints a default rate card), but a demo
+ * still wants everything at once: several unrelated companies, each with a full
+ * team. So this script is the single, idempotent way to stand up:
  *
  *   - one platform admin
  *   - N demo logistics companies (tenants), each with a tenant admin,

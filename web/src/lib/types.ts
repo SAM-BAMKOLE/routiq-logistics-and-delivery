@@ -183,10 +183,18 @@ export interface PublicTracking {
 }
 
 export interface TenantMember {
-  id: string;
+  userId: string;
   email: string;
   name: string | null;
+  membershipId: string;
   role: string;
+  membershipStatus: "active" | "invited" | "suspended";
+}
+
+export interface InviteResponse {
+  membershipId: string;
+  /** Present only when email delivery is disabled (console adapter). */
+  inviteUrl?: string;
 }
 
 export interface RouteStop {

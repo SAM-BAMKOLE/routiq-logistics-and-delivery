@@ -82,7 +82,7 @@ export class IdentityEmailsListener {
 
   private base(): string {
     return (
-      this.config.get<string>('APP_BASE_URL') ?? 'http://localhost:5173'
+      this.config.get<string>('APP_BASE_URL') ?? 'http://localhost:3000'
     ).replace(/\/+$/, '');
   }
 }

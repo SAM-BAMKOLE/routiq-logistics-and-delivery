@@ -9,24 +9,56 @@ import {
   Package,
   ReceiptText,
   Truck,
+  UserCog,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { roleHasPermission, roleLabel } from "@/lib/permissions";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
+/**
+ * Navigation is filtered by permission so a driver never sees console they
+ * cannot open. `permission` is omitted for pages everyone may reach.
+ */
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/shipments", label: "Shipments", icon: Package },
-  { href: "/drivers", label: "Drivers", icon: Truck },
-  { href: "/customers", label: "Customers", icon: Users },
-  { href: "/tracking", label: "Tracking", icon: MapPin },
-  { href: "/pricing", label: "Pricing", icon: ReceiptText },
-];
+  { href: "/drivers", label: "Drivers", icon: Truck, permission: "drivers:read" },
+  {
+    href: "/customers",
+    label: "Customers",
+    icon: Users,
+    permission: "customers:read",
+  },
+  {
+    href: "/tracking",
+    label: "Tracking",
+    icon: MapPin,
+    permission: "tracking:read",
+  },
+  {
+    href: "/team",
+    label: "Team",
+    icon: UserCog,
+    permission: "users:read",
+  },
+  {
+    href: "/pricing",
+    label: "Pricing",
+    icon: ReceiptText,
+    permission: "pricing:read",
+  },
+] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { session, logout } = useSession();
+  const role = session?.tenant?.role ?? null;
+
+  const items = NAV.filter(
+    (item) => !("permission" in item) || roleHasPermission(role, item.permission),
+  );
 
   return (
     <div className="flex min-h-screen bg-muted/30">
@@ -37,8 +69,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <span className="text-base font-semibold tracking-tight">Routiq</span>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 p-3">
-          {NAV.map((item) => {
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+          {items.map((item) => {
             const active =
               pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
@@ -75,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
             <span className="truncate text-xs text-muted-foreground">
               {session?.user.email}
-              {session?.tenant?.role ? ` · ${session.tenant.role}` : ""}
+              {role ? ` · ${roleLabel(role)}` : ""}
             </span>
           </div>
           <Button variant="outline" size="sm" onClick={() => void logout()}>

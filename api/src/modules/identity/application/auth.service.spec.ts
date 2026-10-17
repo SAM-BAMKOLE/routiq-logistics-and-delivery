@@ -622,7 +622,13 @@ describe('AuthService', () => {
 
       const result = await h.service.acceptInvite(issueInvite(h, 'u-9'), 'new-password-123');
 
-      expect(result.tenant?.id).toBe('t-1');
+      // The session carries the invited tenant's real identity, not blanks.
+      expect(result.tenant).toMatchObject({
+        id: 't-1',
+        name: 'T1',
+        slug: 't1',
+        role: 'dispatcher',
+      });
       expect(h.oneTimeRows[0].usedAt).not.toBeNull();
       const credentials = h.users.get('u-9');
       expect(credentials?.passwordHash).toBe('ph:new-password-123');
@@ -649,6 +655,60 @@ describe('AuthService', () => {
           response: { code: 'INVALID_INVITATION' },
         },
       );
+    });
+  });
+
+  describe('register (company sign-up)', () => {
+    it('creates a verified admin membership and returns a session', async () => {
+      const h = makeHarness();
+
+      const result = await h.service.registerTenantAdmin({
+        tenantId: 't-new',
+        tenantName: 'Northwind',
+        tenantSlug: 'northwind',
+        email: 'Founder@Example.com',
+        password: 'new-password-123',
+        name: 'Ada',
+      });
+
+      // The email is normalized before it is stored, and the founder's address
+      // is trusted because they just proved control of it by registering.
+      const created = [...h.users.values()][0].user;
+      expect(created.email).toBe('founder@example.com');
+      expect(created.emailVerifiedAt).not.toBeNull();
+      expect(created.hasPassword).toBe(true);
+
+      expect(result.tenant).toMatchObject({
+        id: 't-new',
+        name: 'Northwind',
+        slug: 'northwind',
+        role: 'tenant_admin',
+      });
+      expect(result.user.email).toBe('founder@example.com');
+      expect(h.memberships[0].membership).toMatchObject({
+        tenantId: 't-new',
+        role: 'tenant_admin',
+        status: 'active',
+      });
+      expect(h.refreshRows).toHaveLength(1);
+    });
+
+    it('rejects an email that already has an account, creating nothing', async () => {
+      const h = makeHarness();
+      seedUser(h, { email: 'taken@example.com' });
+
+      await expect(
+        h.service.registerTenantAdmin({
+          tenantId: 't-new',
+          tenantName: 'Northwind',
+          tenantSlug: 'northwind',
+          email: 'taken@example.com',
+          password: 'new-password-123',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'EMAIL_TAKEN' } });
+
+      expect(h.memberships).toHaveLength(0);
+      expect(h.refreshRows).toHaveLength(0);
     });
   });
 });

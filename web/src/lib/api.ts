@@ -41,6 +41,19 @@ export interface TokenPair {
   refreshToken: string;
 }
 
+/**
+ * Human-readable message for anything thrown by the client. API failures carry
+ * the RFC 9457 `detail` plus a machine code we surface in parentheses, which is
+ * what the auth screens show to the user.
+ */
+export function errorMessage(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    return cause.code ? `${cause.message} (${cause.code})` : cause.message;
+  }
+  if (cause instanceof Error) return cause.message;
+  return "Something went wrong. Please try again.";
+}
+
 interface SendOptions {
   method?: string;
   body?: unknown;
@@ -77,6 +90,53 @@ export class ApiClient {
       refreshToken: auth.refreshToken,
     });
     return auth;
+  }
+
+  async register(input: {
+    companyName: string;
+    name?: string;
+    email: string;
+    password: string;
+  }): Promise<AuthResponse> {
+    const auth = await this.send<AuthResponse>("/auth/register", {
+      method: "POST",
+      body: input,
+      token: null,
+    });
+    this.setTokens({
+      accessToken: auth.accessToken,
+      refreshToken: auth.refreshToken,
+    });
+    return auth;
+  }
+
+  async acceptInvite(token: string, password: string): Promise<AuthResponse> {
+    const auth = await this.send<AuthResponse>("/auth/accept-invite", {
+      method: "POST",
+      body: { token, password },
+      token: null,
+    });
+    this.setTokens({
+      accessToken: auth.accessToken,
+      refreshToken: auth.refreshToken,
+    });
+    return auth;
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    await this.send("/auth/forgot-password", {
+      method: "POST",
+      body: { email },
+      token: null,
+    });
+  }
+
+  async resetPassword(token: string, password: string): Promise<void> {
+    await this.send("/auth/reset-password", {
+      method: "POST",
+      body: { token, password },
+      token: null,
+    });
   }
 
   async switchTenant(tenantId: string): Promise<AuthResponse> {
