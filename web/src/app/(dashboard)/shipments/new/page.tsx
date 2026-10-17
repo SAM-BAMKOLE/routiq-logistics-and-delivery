@@ -489,8 +489,24 @@ function NewCustomerForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+  /**
+   * Deliberately not a `<form>`: this panel renders inside the booking form
+   * above, and a nested `<form>` is a parse error the browser silently drops —
+   * the "Create customer" button would then submit the *booking* form instead,
+   * and the customer would never be created.
+   */
+  function handleEnter(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Enter" || submitting) return;
+    if (!(event.target instanceof HTMLInputElement)) return;
     event.preventDefault();
+    void submit();
+  }
+
+  async function submit() {
+    if (name.trim().length < 2) {
+      setError("Customer name is required.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -508,9 +524,9 @@ function NewCustomerForm({
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
+    <div
       className="space-y-4 rounded-lg border bg-muted/30 p-4"
+      onKeyDown={handleEnter}
     >
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -543,7 +559,12 @@ function NewCustomerForm({
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <Button type="submit" size="sm" disabled={submitting}>
+        <Button
+          type="button"
+          size="sm"
+          disabled={submitting}
+          onClick={() => void submit()}
+        >
           {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
           Create customer
         </Button>
@@ -551,7 +572,7 @@ function NewCustomerForm({
           Cancel
         </Button>
       </div>
-    </form>
+    </div>
   );
 }
 
@@ -573,8 +594,19 @@ function NewAddressForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+  /** Never nest a `<form>` in the booking form — see NewCustomerForm. */
+  function handleEnter(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Enter" || submitting) return;
+    if (!(event.target instanceof HTMLInputElement)) return;
     event.preventDefault();
+    void submit();
+  }
+
+  async function submit() {
+    if (line1.trim().length === 0 || city.trim().length === 0) {
+      setError("Address and city are required.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -597,9 +629,9 @@ function NewAddressForm({
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
+    <div
       className="space-y-4 rounded-lg border bg-muted/30 p-4"
+      onKeyDown={handleEnter}
     >
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -648,7 +680,12 @@ function NewAddressForm({
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <Button type="submit" size="sm" disabled={submitting}>
+        <Button
+          type="button"
+          size="sm"
+          disabled={submitting}
+          onClick={() => void submit()}
+        >
           {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
           Save address
         </Button>
@@ -656,7 +693,7 @@ function NewAddressForm({
           Cancel
         </Button>
       </div>
-    </form>
+    </div>
   );
 }
 
