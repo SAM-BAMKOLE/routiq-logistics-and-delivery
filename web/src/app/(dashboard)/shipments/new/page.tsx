@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Loader2, Plus } from "lucide-react";
@@ -92,11 +92,6 @@ export default function NewShipmentPage() {
       active = false;
     };
   }, [customerId, api]);
-
-  const selectedCustomer = useMemo(
-    () => customers?.find((customer) => customer.id === customerId) ?? null,
-    [customers, customerId],
-  );
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -267,47 +262,58 @@ export default function NewShipmentPage() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Loading addresses…
               </div>
-            ) : addresses.length < 2 ? (
+            ) : addresses.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                {selectedCustomer?.name ?? "This customer"} needs at least two
-                saved addresses (a pickup and a drop-off).
-                {canManageCustomers ? " Add one above." : ""}
+                No saved addresses yet.
+                {canManageCustomers
+                  ? " Add a pickup and a drop-off above."
+                  : " Ask an administrator to add one."}
               </p>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="pickup">Pickup</Label>
-                  <Select
-                    id="pickup"
-                    value={pickupAddressId}
-                    onChange={(event) => setPickupAddressId(event.target.value)}
-                    required
-                  >
-                    <option value="">Select an address…</option>
-                    {addresses.map((address) => (
-                      <option key={address.id} value={address.id}>
-                        {formatAddress(address)}
-                      </option>
-                    ))}
-                  </Select>
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="pickup">Pickup</Label>
+                    <Select
+                      id="pickup"
+                      value={pickupAddressId}
+                      onChange={(event) => setPickupAddressId(event.target.value)}
+                      required
+                    >
+                      <option value="">Select an address…</option>
+                      {addresses.map((address) => (
+                        <option key={address.id} value={address.id}>
+                          {formatAddress(address)}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="dropoff">Drop-off</Label>
+                    <Select
+                      id="dropoff"
+                      value={dropoffAddressId}
+                      onChange={(event) => setDropoffAddressId(event.target.value)}
+                      required
+                    >
+                      <option value="">Select an address…</option>
+                      {addresses.map((address) => (
+                        <option key={address.id} value={address.id}>
+                          {formatAddress(address)}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dropoff">Drop-off</Label>
-                  <Select
-                    id="dropoff"
-                    value={dropoffAddressId}
-                    onChange={(event) => setDropoffAddressId(event.target.value)}
-                    required
-                  >
-                    <option value="">Select an address…</option>
-                    {addresses.map((address) => (
-                      <option key={address.id} value={address.id}>
-                        {formatAddress(address)}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
+                {/* A freshly created customer starts with one address. Show it
+                    rather than a bare message, or saving it looks like a no-op. */}
+                {addresses.length < 2 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Only one saved address so far — save a second one to choose a
+                    drop-off.
+                  </p>
+                ) : null}
+              </>
             )}
           </CardContent>
         </Card>
