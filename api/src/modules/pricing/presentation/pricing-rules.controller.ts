@@ -27,6 +27,7 @@ import { CreatePricingRuleDto, UpdatePricingRuleDto } from './dto/pricing.dto.js
 import {
   PricingRuleListResponseDto,
   PricingRuleResponseDto,
+  SurchargeCatalogResponseDto,
 } from './dto/pricing-response.dto.js';
 
 /**
@@ -59,6 +60,7 @@ export class PricingRulesController {
         minFeeMinor: dto.minFeeMinor,
         priority: dto.priority,
         activeFrom: dto.activeFrom ? new Date(dto.activeFrom) : undefined,
+        surcharges: dto.surcharges,
       }),
     );
   }
@@ -70,6 +72,22 @@ export class PricingRulesController {
   async list(): Promise<PricingRuleListResponseDto> {
     const rules = await this.rules.list(this.context.requireTenantId());
     return { data: rules.map((rule) => PricingRuleResponseDto.from(rule)) };
+  }
+
+  /**
+   * The surcharge catalogue of the active rate card, for the booking form.
+   * Any role that can book a shipment (or read pricing) may see it - it is
+   * the list of optional extras a customer can pick, not the rate card
+   * arithmetic. Declared before `:id` so it is not captured as a UUID.
+   */
+  @Get('surcharge-catalog')
+  @RequirePermissions('shipments:create', 'pricing:read')
+  @ApiOperation({ summary: 'Surcharges of the active rate card' })
+  @ApiOkResponse({ type: SurchargeCatalogResponseDto })
+  async surchargeCatalog(): Promise<SurchargeCatalogResponseDto> {
+    return SurchargeCatalogResponseDto.from(
+      await this.rules.surchargeCatalog(this.context.requireTenantId()),
+    );
   }
 
   @Get(':id')
@@ -101,6 +119,7 @@ export class PricingRulesController {
         minFeeMinor: dto.minFeeMinor,
         priority: dto.priority,
         activeFrom: dto.activeFrom ? new Date(dto.activeFrom) : undefined,
+        surcharges: dto.surcharges,
       }),
     );
   }

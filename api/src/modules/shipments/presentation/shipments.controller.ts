@@ -84,6 +84,7 @@ export class ShipmentsController {
           quantity: item.quantity,
           weightKg: item.weightKg ?? null,
         })),
+        surchargeCodes: dto.surchargeCodes,
       }),
     );
   }

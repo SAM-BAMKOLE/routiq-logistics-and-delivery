@@ -18,6 +18,7 @@ function ruleFixture(id: string, tenantId: string): PricingRule {
     minFeeMinor: 0,
     priority: 0,
     activeFrom: new Date(),
+    surcharges: [],
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -40,6 +41,7 @@ function makeHarness(): {
         minFeeMinor: input.minFeeMinor ?? 0,
         priority: input.priority ?? 0,
         activeFrom: input.activeFrom ?? new Date(),
+        surcharges: [...(input.surcharges ?? [])],
       };
       rules.set(rule.id, rule);
       return rule;

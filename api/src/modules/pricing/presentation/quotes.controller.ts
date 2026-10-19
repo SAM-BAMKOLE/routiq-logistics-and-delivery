@@ -32,6 +32,7 @@ export class QuotesController {
         pickupAddressId: dto.pickupAddressId,
         dropoffAddressId: dto.dropoffAddressId,
         weightKg: dto.weightKg,
+        surchargeCodes: dto.surchargeCodes,
       }),
     );
   }

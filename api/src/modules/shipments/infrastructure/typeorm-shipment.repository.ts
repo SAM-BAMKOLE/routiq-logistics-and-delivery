@@ -44,6 +44,7 @@ export class TypeOrmShipmentRepository implements ShipmentRepository {
       windowStart: shipment.windowStart,
       windowEnd: shipment.windowEnd,
       priceMinor: shipment.priceMinor,
+      priceBreakdown: shipment.priceBreakdown,
       currency: shipment.currency,
       failedAttempts: shipment.failedAttempts,
     });
@@ -161,6 +162,7 @@ function toDomain(
     windowStart: entity.windowStart,
     windowEnd: entity.windowEnd,
     priceMinor: entity.priceMinor,
+    priceBreakdown: entity.priceBreakdown,
     currency: entity.currency,
     failedAttempts: entity.failedAttempts,
     version: entity.version,

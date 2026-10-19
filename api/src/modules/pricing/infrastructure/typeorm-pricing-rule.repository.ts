@@ -3,6 +3,7 @@ import { TransactionHost } from '@nestjs-cls/transactional';
 import type { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import type { Repository } from 'typeorm';
 import { TenantContextService } from '../../../shared/tenancy/tenant-context.service.js';
+import { DEFAULT_SURCHARGES } from '../domain/pricing-rule.js';
 import type {
   CreatePricingRuleInput,
   PricingRule,
@@ -33,6 +34,9 @@ export class TypeOrmPricingRuleRepository implements PricingRuleRepository {
       minFeeMinor: input.minFeeMinor ?? 0,
       priority: input.priority ?? 0,
       activeFrom: input.activeFrom ?? new Date(),
+      // A rate card with no catalogue still ships: it starts with the stock
+      // surcharge list (express, terrain, handling) and the admin edits it.
+      surcharges: [...(input.surcharges ?? DEFAULT_SURCHARGES)],
     });
     return toDomain(await repository.save(entity));
   }
@@ -63,7 +67,12 @@ export class TypeOrmPricingRuleRepository implements PricingRuleRepository {
     if (!entity) {
       return null;
     }
-    repository.merge(entity, changes);
+    const { surcharges, ...rest } = changes;
+    repository.merge(entity, {
+      ...rest,
+      // `merge` wants a mutable array; the input type is readonly.
+      ...(surcharges ? { surcharges: [...surcharges] } : {}),
+    });
     return toDomain(await repository.save(entity));
   }
 
@@ -91,6 +100,7 @@ function toDomain(entity: PricingRuleOrmEntity): PricingRule {
     minFeeMinor: entity.minFeeMinor,
     priority: entity.priority,
     activeFrom: entity.activeFrom,
+    surcharges: entity.surcharges ?? [],
     createdAt: entity.createdAt,
     updatedAt: entity.updatedAt,
   };

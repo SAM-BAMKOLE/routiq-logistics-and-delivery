@@ -17,6 +17,8 @@ import { CreateRoutes1756000000014 } from './migrations/1756000000014-create-rou
 import { CreateTrackingPod1756000000015 } from './migrations/1756000000015-create-tracking-pod.js';
 import { CreateOutbox1756000000016 } from './migrations/1756000000016-create-outbox.js';
 import { CreateBills1756000000017 } from './migrations/1756000000017-create-bills.js';
+import { AddPricingSurcharges1756000000018 } from './migrations/1756000000018-add-pricing-surcharges.js';
+import { AddShipmentPriceBreakdown1756000000019 } from './migrations/1756000000019-add-shipment-price-breakdown.js';
 
 /**
  * Migrations are listed explicitly rather than loaded from a filesystem glob.
@@ -41,6 +43,8 @@ export const migrations = [
   CreateTrackingPod1756000000015,
   CreateOutbox1756000000016,
   CreateBills1756000000017,
+  AddPricingSurcharges1756000000018,
+  AddShipmentPriceBreakdown1756000000019,
 ];
 
 /**

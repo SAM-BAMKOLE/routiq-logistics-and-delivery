@@ -12,6 +12,8 @@ export interface QuoteInput {
   pickupAddressId: string;
   dropoffAddressId: string;
   weightKg: number;
+  /** Rate-card surcharge codes the booking opts into. */
+  surchargeCodes?: readonly string[];
 }
 
 /**
@@ -58,6 +60,7 @@ export class QuotesService {
         distanceMeters,
         weightKg: input.weightKg,
         currency: tenantCurrency(tenant.settings),
+        surchargeCodes: input.surchargeCodes,
       },
       new Date(),
     );

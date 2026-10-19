@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   VersionColumn,
 } from 'typeorm';
+import type { QuoteBreakdown } from '../../pricing/domain/quote.js';
 
 /**
  * Persistence entity for the tenant-scoped `shipments` table. Controllers
@@ -60,6 +61,9 @@ export class ShipmentOrmEntity {
 
   @Column({ type: 'integer', nullable: true })
   priceMinor: number | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  priceBreakdown: QuoteBreakdown | null;
 
   @Column({ type: 'text' })
   currency: string;

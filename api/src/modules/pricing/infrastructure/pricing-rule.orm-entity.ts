@@ -5,11 +5,13 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { PricingSurcharge } from '../domain/pricing-rule.js';
 
 /**
  * Persistence entity for the tenant-scoped `pricing_rules` table. Money is
  * `integer` (minor units); TypeORM maps it to a JS number, and the DTO layer
- * validates non-negative integers on the way in.
+ * validates non-negative integers on the way in. `surcharges` is a jsonb
+ * array - read and written whole, never queried by element.
  */
 @Entity('pricing_rules')
 export class PricingRuleOrmEntity {
@@ -39,6 +41,9 @@ export class PricingRuleOrmEntity {
 
   @Column({ type: 'timestamptz', default: () => 'now()' })
   activeFrom: Date;
+
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  surcharges: PricingSurcharge[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

@@ -1,5 +1,11 @@
-import type { PricingRule } from './pricing-rule.js';
+import type { PricingRule, PricingSurcharge } from './pricing-rule.js';
 import { evaluateQuote } from './quote.js';
+
+const SURCHARGES: readonly PricingSurcharge[] = [
+  { code: 'express', label: 'Express delivery', kind: 'percent', value: 2500 },
+  { code: 'difficult_road', label: 'Rough terrain', kind: 'percent', value: 1000 },
+  { code: 'fragile', label: 'Fragile handling', kind: 'flat', value: 150_000 },
+];
 
 function rule(overrides: Partial<PricingRule> & { id: string }): PricingRule {
   return {
@@ -11,6 +17,7 @@ function rule(overrides: Partial<PricingRule> & { id: string }): PricingRule {
     minFeeMinor: 0,
     priority: 0,
     activeFrom: new Date('2026-01-01T00:00:00Z'),
+    surcharges: [],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
@@ -112,5 +119,103 @@ describe('evaluateQuote', () => {
     const second = evaluateQuote([...rules].reverse(), { distanceMeters: null, weightKg: 1, currency: 'NGN' }, NOW);
     expect(first?.ruleId).toBe('r-a');
     expect(second?.ruleId).toBe('r-a');
+  });
+
+  describe('surcharges', () => {
+    const withSurcharges = () => rule({ id: 'r-1', surcharges: SURCHARGES });
+
+    it('adds nothing when no codes are opted into', () => {
+      const breakdown = evaluateQuote(
+        [withSurcharges()],
+        { distanceMeters: null, weightKg: 1, currency: 'NGN' },
+        NOW,
+      );
+      expect(breakdown?.surcharges).toEqual([]);
+      expect(breakdown?.surchargeFeeMinor).toBe(0);
+      expect(breakdown?.priceMinor).toBe(51_000); // base + 1 kg
+    });
+
+    it('applies a percent surcharge off the subtotal', () => {
+      // subtotal 51_000; express +25% = 12_750.
+      const breakdown = evaluateQuote(
+        [withSurcharges()],
+        { distanceMeters: null, weightKg: 1, currency: 'NGN', surchargeCodes: ['express'] },
+        NOW,
+      );
+      expect(breakdown?.surchargeFeeMinor).toBe(12_750);
+      expect(breakdown?.surcharges).toEqual([
+        {
+          code: 'express',
+          label: 'Express delivery',
+          kind: 'percent',
+          value: 2500,
+          amountMinor: 12_750,
+        },
+      ]);
+      expect(breakdown?.priceMinor).toBe(63_750);
+    });
+
+    it('sums percent and flat surcharges and totals the printed lines', () => {
+      const breakdown = evaluateQuote(
+        [withSurcharges()],
+        {
+          distanceMeters: null,
+          weightKg: 1,
+          currency: 'NGN',
+          surchargeCodes: ['express', 'fragile'],
+        },
+        NOW,
+      );
+      const lines = breakdown?.surcharges.map((s) => s.amountMinor) ?? [];
+      expect(lines).toEqual([12_750, 150_000]);
+      expect(breakdown?.surchargeFeeMinor).toBe(
+        lines.reduce((sum, amount) => sum + amount, 0),
+      );
+      expect(breakdown?.priceMinor).toBe(51_000 + 12_750 + 150_000);
+    });
+
+    it('follows catalogue order and ignores unknown or repeated codes', () => {
+      const breakdown = evaluateQuote(
+        [withSurcharges()],
+        {
+          distanceMeters: null,
+          weightKg: 1,
+          currency: 'NGN',
+          // Reversed, repeated, and one code the rate card does not define.
+          surchargeCodes: ['fragile', 'nope', 'express', 'express'],
+        },
+        NOW,
+      );
+      expect(breakdown?.surcharges.map((s) => s.code)).toEqual([
+        'express',
+        'fragile',
+      ]);
+    });
+
+    it('still floors the total at the minimum fee', () => {
+      const breakdown = evaluateQuote(
+        [
+          rule({
+            id: 'r-1',
+            baseFeeMinor: 1_000,
+            perKmMinor: 0,
+            perKgMinor: 0,
+            minFeeMinor: 100_000,
+            surcharges: SURCHARGES,
+          }),
+        ],
+        {
+          distanceMeters: null,
+          weightKg: 0,
+          currency: 'NGN',
+          surchargeCodes: ['express'],
+        },
+        NOW,
+      );
+      // Subtotal 1_000, express +25% = 250; 1_250 is still under the floor.
+      expect(breakdown?.subtotalMinor).toBe(1_000);
+      expect(breakdown?.surchargeFeeMinor).toBe(250);
+      expect(breakdown?.priceMinor).toBe(100_000);
+    });
   });
 });

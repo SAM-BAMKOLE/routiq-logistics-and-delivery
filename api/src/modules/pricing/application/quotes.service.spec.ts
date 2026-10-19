@@ -43,6 +43,7 @@ function ruleFixture(): PricingRule {
     minFeeMinor: 0,
     priority: 0,
     activeFrom: new Date('2026-01-01T00:00:00Z'),
+    surcharges: [],
     createdAt: new Date(),
     updatedAt: new Date(),
   };

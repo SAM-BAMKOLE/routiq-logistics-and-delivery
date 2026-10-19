@@ -1,3 +1,4 @@
+import type { QuoteBreakdown } from '../../pricing/domain/quote.js';
 import { canTransition, type ShipmentStatus } from './shipment-status.js';
 
 /**
@@ -65,6 +66,13 @@ export interface CreateShipmentProps {
   readonly windowEnd: Date | null;
   readonly priceMinor: number | null;
   readonly currency: string;
+  /**
+   * The itemised quote captured at creation, stored verbatim so the price a
+   * customer was quoted stays auditable after the rate card changes. Optional
+   * because a shipment can be built without one; the service always supplies
+   * the breakdown the pricing module returned.
+   */
+  readonly priceBreakdown?: QuoteBreakdown | null;
   readonly items?: readonly ShipmentItem[];
 }
 
@@ -113,6 +121,7 @@ export class Shipment {
     readonly priceMinor: number | null,
     readonly currency: string,
     readonly items: readonly ShipmentItem[],
+    readonly priceBreakdown: QuoteBreakdown | null,
     props: {
       status: ShipmentStatus;
       failedAttempts: number;
@@ -184,6 +193,7 @@ export class Shipment {
       input.priceMinor,
       input.currency,
       input.items ?? [],
+      input.priceBreakdown ?? null,
       {
         status: 'CREATED',
         failedAttempts: 0,
@@ -226,6 +236,7 @@ export class Shipment {
       props.priceMinor,
       props.currency,
       props.items,
+      props.priceBreakdown ?? null,
       {
         status: props.status,
         failedAttempts: props.failedAttempts,

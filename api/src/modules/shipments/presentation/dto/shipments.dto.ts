@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
@@ -73,6 +74,19 @@ export class CreateShipmentDto {
   @Type(() => ShipmentItemDto)
   @ArrayMaxSize(50)
   items?: ShipmentItemDto[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['express', 'fragile'],
+    description:
+      'Rate-card surcharge codes to opt into when this shipment is priced.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  surchargeCodes?: string[];
 }
 
 export class ListShipmentsQueryDto {

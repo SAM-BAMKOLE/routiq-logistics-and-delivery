@@ -2,8 +2,10 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   CreatePricingRuleInput,
   PricingRule,
+  PricingSurcharge,
   UpdatePricingRuleInput,
 } from '../domain/pricing-rule.js';
+import { activeRule } from '../domain/quote.js';
 import {
   PRICING_RULE_REPOSITORY,
   type PricingRuleRepository,
@@ -26,6 +28,24 @@ export class PricingRulesService {
 
   list(tenantId: string): Promise<PricingRule[]> {
     return this.rules.listByTenant(tenantId);
+  }
+
+  /**
+   * The active rate card's surcharge catalogue, for the booking form. Returns
+   * null ids and an empty list when the tenant has no active rule yet, so the
+   * form shows no extras instead of failing.
+   */
+  async surchargeCatalog(tenantId: string): Promise<{
+    ruleId: string | null;
+    ruleName: string | null;
+    surcharges: readonly PricingSurcharge[];
+  }> {
+    const active = activeRule(await this.rules.listByTenant(tenantId));
+    return {
+      ruleId: active?.id ?? null,
+      ruleName: active?.name ?? null,
+      surcharges: active?.surcharges ?? [],
+    };
   }
 
   async getById(tenantId: string, id: string): Promise<PricingRule> {

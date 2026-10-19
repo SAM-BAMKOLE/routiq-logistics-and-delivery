@@ -54,6 +54,8 @@ export interface CreateShipmentCommand {
     quantity: number;
     weightKg?: number | null;
   }>;
+  /** Rate-card surcharge codes to opt into when pricing this shipment. */
+  readonly surchargeCodes?: readonly string[];
 }
 
 /**
@@ -127,6 +129,7 @@ export class ShipmentsService {
       pickupAddressId: command.pickupAddressId,
       dropoffAddressId: command.dropoffAddressId,
       weightKg: command.weightKg,
+      surchargeCodes: command.surchargeCodes,
     });
 
     const shipment = await this.insertWithTrackingRetry(() =>
@@ -144,6 +147,7 @@ export class ShipmentsService {
         windowEnd: command.windowEnd ?? null,
         priceMinor: quote.priceMinor,
         currency: quote.currency,
+        priceBreakdown: quote,
         items: (command.items ?? []).map((item) => ({
           description: item.description,
           quantity: item.quantity,

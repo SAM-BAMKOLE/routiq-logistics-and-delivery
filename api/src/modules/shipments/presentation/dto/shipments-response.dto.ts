@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { SHIPMENT_STATUSES } from '../../domain/shipment-status.js';
 import type { Shipment } from '../../domain/shipment.js';
 import type { ShipmentStatus } from '../../domain/shipment-status.js';
+import { QuoteResponseDto } from '../../../pricing/presentation/dto/pricing-response.dto.js';
 
 class ShipmentItemResponseDto {
   @ApiProperty()
@@ -56,6 +57,13 @@ export class ShipmentResponseDto {
   @ApiProperty({ nullable: true, description: 'Quoted price in minor units.' })
   priceMinor: number | null;
 
+  @ApiProperty({
+    type: QuoteResponseDto,
+    nullable: true,
+    description: 'Itemised quote captured when the shipment was created.',
+  })
+  priceBreakdown: QuoteResponseDto | null;
+
   @ApiProperty({ example: 'NGN' })
   currency: string;
 
@@ -102,6 +110,9 @@ export class ShipmentResponseDto {
       windowStart: shipment.windowStart ? shipment.windowStart.toISOString() : null,
       windowEnd: shipment.windowEnd ? shipment.windowEnd.toISOString() : null,
       priceMinor: shipment.priceMinor,
+      priceBreakdown: shipment.priceBreakdown
+        ? QuoteResponseDto.from(shipment.priceBreakdown)
+        : null,
       currency: shipment.currency,
       failedAttempts: shipment.failedAttempts,
       driverId: shipment.driverId,
