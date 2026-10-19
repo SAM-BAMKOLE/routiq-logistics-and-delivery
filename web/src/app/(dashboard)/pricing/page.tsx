@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate, formatMoney } from "@/lib/format";
-import type { PricingRule } from "@/lib/types";
+import type { PricingRule, PricingSurcharge, SurchargeKind } from "@/lib/types";
 import { useApiQuery } from "@/lib/use-api-query";
 
 export default function PricingPage() {
@@ -97,9 +98,15 @@ export default function PricingPage() {
         <CardContent className="text-sm text-muted-foreground">
           <p>
             <span className="font-medium text-foreground">Total</span> = base fee
-            + (distance × per-km) + (weight × per-kg), floored at the minimum
-            fee. Distance is the straight-line Haversine distance when both
-            addresses have coordinates.
+            + (distance × per-km) + (weight × per-kg) + opted-in surcharges,
+            floored at the minimum fee. Distance is the straight-line Haversine
+            distance when both addresses have coordinates.
+          </p>
+          <p className="mt-2">
+            Surcharges are optional extras (express delivery, difficult terrain,
+            fragile handling) a dispatcher ticks when booking. A percentage
+            surcharge is charged on the subtotal above; a flat one is added
+            as-is. Nothing is applied unless it is selected.
           </p>
         </CardContent>
       </Card>
@@ -206,7 +213,12 @@ function PricingRow({
   return (
     <>
       <TableRow className={editing ? "border-b-0" : undefined}>
-        <TableCell className="font-medium">{rule.name}</TableCell>
+        <TableCell className="font-medium">
+          <div>{rule.name}</div>
+          <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+            {surchargeSummary(rule.surcharges)}
+          </div>
+        </TableCell>
         <TableCell className="text-right">
           {formatMoney(rule.baseFeeMinor)}
         </TableCell>
@@ -303,13 +315,47 @@ function RateCardForm({
   const [activeFrom, setActiveFrom] = useState(initial
     ? initial.activeFrom.slice(0, 10)
     : "");
+  const [surcharges, setSurcharges] = useState<SurchargeDraft[]>(
+    () => initial?.surcharges.map(surchargeToDraft) ?? [],
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function updateSurcharge(index: number, patch: Partial<SurchargeDraft>) {
+    setSurcharges((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  }
+
+  function removeSurcharge(index: number) {
+    setSurcharges((rows) => rows.filter((_, i) => i !== index));
+  }
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitting(true);
     setError(null);
+
+    // Validate the surcharge rows before sending: a half-filled row would
+    // otherwise be silently dropped by the API (it validates the shape).
+    const parsed: PricingSurcharge[] = [];
+    const seen = new Set<string>();
+    for (const draft of surcharges) {
+      const surcharge = draftToSurcharge(draft);
+      if (!surcharge) {
+        setError(
+          "Each surcharge needs a code, a label, and an amount greater than zero.",
+        );
+        return;
+      }
+      if (seen.has(surcharge.code)) {
+        setError(`Surcharge code "${surcharge.code}" is used more than once.`);
+        return;
+      }
+      seen.add(surcharge.code);
+      parsed.push(surcharge);
+    }
+
+    setSubmitting(true);
 
     const body = {
       name: name.trim(),
@@ -318,6 +364,7 @@ function RateCardForm({
       perKgMinor: toMinor(perKg),
       minFeeMinor: toMinor(minFee),
       priority: Number(priority),
+      surcharges: parsed,
       // Left empty, a new rule starts applying immediately.
       ...(activeFrom ? { activeFrom: new Date(activeFrom).toISOString() } : {}),
     };
@@ -425,6 +472,98 @@ function RateCardForm({
           />
         </div>
       </div>
+
+      <div className="space-y-3 rounded-md border bg-background/60 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <Label>Surcharges</Label>
+            <p className="text-xs text-muted-foreground">
+              Optional extras a dispatcher can tick when booking (express speed,
+              rough terrain, special handling). Nothing is charged unless it is
+              selected.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setSurcharges((rows) => [
+                ...rows,
+                { code: "", label: "", kind: "flat", amount: "" },
+              ])
+            }
+          >
+            <Plus className="size-4" />
+            Add
+          </Button>
+        </div>
+
+        {surcharges.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            None yet — bookings are priced by base, distance and weight only.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {surcharges.map((row, index) => (
+              <div
+                key={index}
+                className="grid items-center gap-2 sm:grid-cols-[10rem_1fr_9rem_8rem_auto]"
+              >
+                <Input
+                  aria-label="Surcharge code"
+                  placeholder="code"
+                  value={row.code}
+                  onChange={(event) =>
+                    updateSurcharge(index, { code: event.target.value })
+                  }
+                />
+                <Input
+                  aria-label="Surcharge label"
+                  placeholder="Label shown to customers"
+                  value={row.label}
+                  onChange={(event) =>
+                    updateSurcharge(index, { label: event.target.value })
+                  }
+                />
+                <Select
+                  aria-label="Surcharge kind"
+                  value={row.kind}
+                  onChange={(event) =>
+                    updateSurcharge(index, {
+                      kind: event.target.value as SurchargeKind,
+                    })
+                  }
+                >
+                  <option value="flat">Flat ₦</option>
+                  <option value="percent">Percent %</option>
+                </Select>
+                <Input
+                  aria-label="Surcharge amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder={row.kind === "percent" ? "25" : "1500.00"}
+                  value={row.amount}
+                  onChange={(event) =>
+                    updateSurcharge(index, { amount: event.target.value })
+                  }
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Remove surcharge"
+                  onClick={() => removeSurcharge(index)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center gap-3">
         <Button type="submit" size="sm" disabled={submitting}>
           {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
@@ -445,4 +584,42 @@ function toMajor(minor: number): string {
 function toMinor(major: string): number {
   const value = Number(major);
   return Number.isFinite(value) && value > 0 ? Math.round(value * 100) : 0;
+}
+
+/**
+ * An editable surcharge row. `amount` is the human number the admin types -
+ * 25 for 25%, 1500 for ₦1,500 - which converts to the API's basis points or
+ * minor units by multiplying by 100.
+ */
+interface SurchargeDraft {
+  code: string;
+  label: string;
+  kind: SurchargeKind;
+  amount: string;
+}
+
+function surchargeToDraft(surcharge: PricingSurcharge): SurchargeDraft {
+  return {
+    code: surcharge.code,
+    label: surcharge.label,
+    kind: surcharge.kind,
+    amount: String(surcharge.value / 100),
+  };
+}
+
+function draftToSurcharge(draft: SurchargeDraft): PricingSurcharge | null {
+  const code = draft.code.trim();
+  const label = draft.label.trim();
+  const amount = Number(draft.amount);
+  if (!code || !label || !Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  return { code, label, kind: draft.kind, value: Math.round(amount * 100) };
+}
+
+function surchargeSummary(surcharges: PricingSurcharge[]): string {
+  if (surcharges.length === 0) return "No surcharges";
+  const labels = surcharges.map((surcharge) => surcharge.label);
+  const shown = labels.slice(0, 3).join(", ");
+  return labels.length > 3 ? `${shown} +${labels.length - 3} more` : shown;
 }

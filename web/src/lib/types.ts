@@ -46,6 +46,7 @@ export interface Shipment {
   windowStart: string | null;
   windowEnd: string | null;
   priceMinor: number | null;
+  priceBreakdown: Quote | null;
   currency: string;
   failedAttempts: number;
   driverId: string | null;
@@ -60,6 +61,29 @@ export interface Shipment {
   updatedAt: string;
 }
 
+/** How a surcharge changes a price: a percent of subtotal, or a flat fee. */
+export type SurchargeKind = "percent" | "flat";
+
+export interface PricingSurcharge {
+  code: string;
+  label: string;
+  kind: SurchargeKind;
+  /** Basis points when `percent` (2500 = +25%); minor units when `flat`. */
+  value: number;
+}
+
+export interface AppliedSurcharge extends PricingSurcharge {
+  /** Minor units this surcharge added to the price. */
+  amountMinor: number;
+}
+
+/** Surcharge catalogue of the tenant's active rate card. */
+export interface SurchargeCatalog {
+  ruleId: string | null;
+  ruleName: string | null;
+  surcharges: PricingSurcharge[];
+}
+
 export interface Quote {
   priceMinor: number;
   currency: string;
@@ -71,6 +95,8 @@ export interface Quote {
   distanceFeeMinor: number;
   weightFeeMinor: number;
   subtotalMinor: number;
+  surcharges: AppliedSurcharge[];
+  surchargeFeeMinor: number;
   minFeeMinor: number;
 }
 
@@ -126,6 +152,7 @@ export interface PricingRule {
   minFeeMinor: number;
   priority: number;
   activeFrom: string;
+  surcharges: PricingSurcharge[];
 }
 
 export interface Assignment {

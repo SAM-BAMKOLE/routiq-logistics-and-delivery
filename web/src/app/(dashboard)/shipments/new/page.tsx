@@ -21,7 +21,7 @@ import { errorMessage } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
 import { roleHasPermission } from "@/lib/permissions";
 import { useSession } from "@/lib/session";
-import type { Address, Customer, Shipment } from "@/lib/types";
+import type { Address, Customer, Shipment, SurchargeCatalog } from "@/lib/types";
 import { useApiQuery } from "@/lib/use-api-query";
 
 export default function NewShipmentPage() {
@@ -43,6 +43,16 @@ export default function NewShipmentPage() {
     [],
   );
 
+  // Optional extras on the active rate card; the picker is empty when the
+  // tenant has none configured (or the call is not permitted for this role).
+  const { data: catalog } = useApiQuery<SurchargeCatalog | null>(
+    async (client) =>
+      await client
+        .get<SurchargeCatalog>("/pricing-rules/surcharge-catalog")
+        .catch(() => null),
+    [],
+  );
+
   const [customerId, setCustomerId] = useState("");
   const [pickupAddressId, setPickupAddressId] = useState("");
   const [dropoffAddressId, setDropoffAddressId] = useState("");
@@ -50,6 +60,7 @@ export default function NewShipmentPage() {
   const [volumeM3, setVolumeM3] = useState("");
   const [windowStart, setWindowStart] = useState("");
   const [windowEnd, setWindowEnd] = useState("");
+  const [surchargeCodes, setSurchargeCodes] = useState<string[]>([]);
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addressesLoading, setAddressesLoading] = useState(false);
@@ -93,6 +104,14 @@ export default function NewShipmentPage() {
     };
   }, [customerId, api]);
 
+  function toggleSurcharge(code: string) {
+    setSurchargeCodes((current) =>
+      current.includes(code)
+        ? current.filter((existing) => existing !== code)
+        : [...current, code],
+    );
+  }
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
@@ -120,6 +139,7 @@ export default function NewShipmentPage() {
     if (volumeM3.trim()) body.volumeM3 = Number(volumeM3);
     if (windowStart) body.windowStart = new Date(windowStart).toISOString();
     if (windowEnd) body.windowEnd = new Date(windowEnd).toISOString();
+    if (surchargeCodes.length > 0) body.surchargeCodes = surchargeCodes;
 
     setSubmitting(true);
     try {
@@ -369,6 +389,46 @@ export default function NewShipmentPage() {
           </CardContent>
         </Card>
 
+        {catalog && catalog.surcharges.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Pricing extras</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Optional surcharges from your rate card
+                {catalog.ruleName ? ` (${catalog.ruleName})` : ""}, applied when
+                this shipment is priced. Nothing is charged unless you tick it.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {catalog.surcharges.map((surcharge) => (
+                  <label
+                    key={surcharge.code}
+                    className="flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors hover:bg-muted/40"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-4 accent-primary"
+                      checked={surchargeCodes.includes(surcharge.code)}
+                      onChange={() => toggleSurcharge(surcharge.code)}
+                    />
+                    <span className="flex-1">
+                      <span className="block text-sm font-medium">
+                        {surcharge.label}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {surcharge.kind === "percent"
+                          ? `+${surcharge.value / 100}% of the subtotal`
+                          : `+${formatMoney(surcharge.value)}`}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <div className="flex items-center gap-3">
           <Button
             type="submit"
@@ -455,6 +515,53 @@ function BookedShipment({
               dispatch.
             </p>
           )}
+
+          {current.priceBreakdown ? (
+            <div className="rounded-md border bg-muted/40 p-3">
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Price breakdown
+              </p>
+              <dl className="space-y-1 text-sm">
+                {[
+                  {
+                    label: current.priceBreakdown.ruleName || "Base fee",
+                    value: current.priceBreakdown.baseFeeMinor,
+                  },
+                  {
+                    label:
+                      current.priceBreakdown.distanceMeters === null
+                        ? "Distance (not known yet)"
+                        : `Distance (${Math.round(current.priceBreakdown.distanceMeters / 1000)} km)`,
+                    value: current.priceBreakdown.distanceFeeMinor,
+                  },
+                  {
+                    label: `Weight (${current.priceBreakdown.weightKg} kg)`,
+                    value: current.priceBreakdown.weightFeeMinor,
+                  },
+                  ...current.priceBreakdown.surcharges.map((surcharge) => ({
+                    label: surcharge.label,
+                    value: surcharge.amountMinor,
+                  })),
+                ].map((line, index) => (
+                  <div
+                    key={`${line.label}-${index}`}
+                    className="flex items-baseline justify-between gap-4 text-muted-foreground"
+                  >
+                    <dt className="truncate">{line.label}</dt>
+                    <dd className="shrink-0 tabular-nums">
+                      {formatMoney(line.value, current.currency)}
+                    </dd>
+                  </div>
+                ))}
+                <div className="mt-2 flex items-baseline justify-between gap-4 border-t pt-2 font-medium">
+                  <dt>Total</dt>
+                  <dd className="tabular-nums">
+                    {formatMoney(current.priceBreakdown.priceMinor, current.currency)}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
 
           <div className="flex items-center gap-3">
             {current.status === "CREATED" ? (
